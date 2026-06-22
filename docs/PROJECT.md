@@ -1,7 +1,7 @@
 # Behemoth — Tower Defense Game
 
 > **Phase**: Core Systems (Day 1 complete — all core engine, rendering, and lore systems built)
-> **Last updated**: 2026-06-22 19:23 UTC
+> **Last updated**: 2026-06-22 19:40 UTC
 > **Maintained by**: The Scribe (Hermes)
 
 ## Overview
@@ -55,6 +55,7 @@ docs/
 - [x] **Render layer** — Canvas background (4-layer atmospheric), enemies (5 shape types), turrets, walls (4-tier visual), health bars
 - [x] **SoundToggle UI** — Mute/unmute speaker button in BehemothGame.jsx
 - [x] **Security audits** — buyBot/buyWatcher bypass fixed, all module-level mutable state scoped to sim instances, turret double-kill fixed, Pulse Wave zombie fix
+- [x] **Artillery enemy behavior** — Ranged attack with wall line-of-sight blocking, fire-and-self-destruct state machine, wave 4+ gating
 - [x] **Lore** — 4 fallen bastions named, 5 Shroud-creature types, full arsenal narrative, Shroud-Tide day/night lore, Chime-Forged bots
 
 ### In Progress
@@ -62,15 +63,14 @@ docs/
 
 ### Next Up
 - [ ] **Frontend integration tests** — React components exist but no component tests
-- [ ] **Enemy behaviors v1** — Enemy type-specific behaviors (scout pathing, tank, artillery, crawler, boss)
+- [ ] **Enemy behaviors v1** — Enemy type-specific behaviors (scout pathing, tank, crawler, boss) — artillery complete
 - [ ] **Stone zone generation** — World generation creates stone zones on map init
 - [ ] **Git push access** — Remote returns 403; commits are local only
 - [ ] **labour.js implementation** — Construction labour system stubbed but not built
 
 ### Known Issues
 - **Push access blocked** — Remote `https://github.com/SolomonGreko/Behemoth.git` returns 403; commits are local only
-- **engine.test.js: 1 failure** — `baseShieldHp` test expects 0 but field is undefined in createSim (base-shield-level work introduced this; non-blocking, 268/269 pass)
-- **Demeter gap scan** — Identified VISUAL_SPEC.md undecomposed, 2 force-completed tasks blocking 3 children, stale PROJECT.md (now updated)
+- **Demeter gap scan** — Identified VISUAL_SPEC.md undecomposed, 2 force-completed tasks blocking 3 children (stale at time of scan; may have been resolved)
 
 ## Resources
 
@@ -101,11 +101,11 @@ All tuning lives in `frontend/src/sim/config.js`:
 ## Tests
 
 ```
-Test Suites: 6 (1 with 1 known failure)
-Tests:       269 total — 268 passing, 1 failing (engine.test.js baseShieldHp)
+Test Suites: 6
+Tests:       275 total — 275 passing
 ```
 - `resource.test.js` — 69 tests (resource accumulation, spending, caps)
-- `engine.test.js` — 52 tests (wave spawning, enemy movement, day/night, game-over, bot harvesting, wall siege)
+- `engine.test.js` — 58 tests (wave spawning, enemy movement, day/night, game-over, bot harvesting, wall siege, artillery behavior)
 - `turrets.test.js` — 37 tests (targeting, damage, upgrades, mounting)
 - `walls.test.js` — 66 tests (placement, damage, repair, upgrade, siege integration, engine purchase paths)
 - `resource-integration.test.js` — 28 tests (cross-module resource flows)

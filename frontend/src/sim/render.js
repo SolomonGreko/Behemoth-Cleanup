@@ -11,6 +11,149 @@
 import { BASE, LEVEL, DAY_CYCLE } from './config.js';
 
 // ═══════════════════════════════════════════════════════════════════════
+// ENEMY VISUAL TOKENS (must be declared early — used by death particles)
+// ═══════════════════════════════════════════════════════════════════════
+
+/**
+ * Visual tokens per enemy type — colours and shapes for the renderer.
+ * Mirrors BehemothGame.jsx ENEMY_TYPE_STYLE but lives in the render
+ * layer so canvas drawing doesn't depend on React component constants.
+ */
+const ENEMY_VISUAL = {
+  scout:     { color: '#60a5fa', glowColor: '#93c5fd', shape: 'diamond' },
+  tank:      { color: '#f59e0b', glowColor: '#fcd34d', shape: 'hexagon' },
+  artillery: { color: '#ef4444', glowColor: '#fca5a5', shape: 'cross' },
+  crawler:   { color: '#34d399', glowColor: '#6ee7b7', shape: 'dot' },
+  boss:      { color: '#c084fc', glowColor: '#d8b4fe', shape: 'pentagram' },
+};
+
+// ═══════════════════════════════════════════════════════════════════════
+// DEATH PARTICLE SYSTEM (Aphrodite — visual combat feedback)
+// ═══════════════════════════════════════════════════════════════════════
+
+/**
+ * Active death particles. Each entry:
+ *   { x, y, color, bornTick, particles: [{ angle, speed, radius, alpha }] }
+ *
+ * Particles expand outward from the death point, fading over ~30 ticks (0.5s).
+ * Ring wave pulses outward at the same time for a "shockwave" effect.
+ */
+const deathEvents = [];
+
+/** Set of "x|y|type" keys for deaths already processed — prevents double-emit. */
+const processedDeaths = new Set();
+
+/** Max age in ticks before a death event is pruned. */
+const DEATH_PARTICLE_LIFE = 30;
+
+/**
+ * Record death particles when an enemy dies this frame.
+ * Called from drawEnemies before drawing live enemies.
+ *
+ * @param {object[]} enemies — sim.enemies array
+ * @param {number} tick — current sim tick
+ */
+function recordDeathParticles(enemies, tick) {
+  for (const enemy of enemies) {
+    if (enemy.alive) continue;
+    const key = `${enemy.x.toFixed(2)}|${enemy.y.toFixed(2)}|${enemy.type}`;
+    if (processedDeaths.has(key)) continue;
+    processedDeaths.add(key);
+
+    const visual = ENEMY_VISUAL[enemy.type] || ENEMY_VISUAL.scout;
+    const particleCount = enemy.type === 'boss' ? 12 : enemy.type === 'tank' ? 6 : 4;
+    const particles = [];
+    for (let i = 0; i < particleCount; i++) {
+      const angle = (Math.PI * 2 * i) / particleCount + (Math.random() - 0.5) * 0.5;
+      const speed = 0.4 + Math.random() * 0.8;  // cells per tick scaling
+      particles.push({ angle, speed, radius: 0.5 + Math.random() * 1.5, alpha: 1.0 });
+    }
+    deathEvents.push({
+      x: enemy.x,
+      y: enemy.y,
+      color: visual.glowColor,
+      bornTick: tick,
+      particles,
+    });
+  }
+}
+
+/**
+ * Draw all active death particles.
+ *
+ * Two-layer effect per death event:
+ *   1. Expanding glow ring (shockwave) — fades from 0.7 → 0 alpha
+ *   2. Scattering particles — fly outward and fade individually
+ *
+ * Called after drawEnemies, before any fog pass.
+ *
+ * @param {CanvasRenderingContext2D} ctx
+ * @param {number} scale — pixels per cell
+ * @param {number} tick — current sim tick
+ */
+export function drawDeathParticles(ctx, scale, tick) {
+  // Prune expired events
+  for (let i = deathEvents.length - 1; i >= 0; i--) {
+    if (tick - deathEvents[i].bornTick > DEATH_PARTICLE_LIFE) {
+      deathEvents.splice(i, 1);
+    }
+  }
+
+  // Also prune the processedDeaths set periodically to avoid unbounded growth
+  if (tick % 300 === 0 && processedDeaths.size > 1000) {
+    processedDeaths.clear();
+  }
+
+  for (const event of deathEvents) {
+    const age = tick - event.bornTick;
+    const lifeRatio = age / DEATH_PARTICLE_LIFE; // 0 → 1
+    const sx = event.x * scale;
+    const sy = event.y * scale;
+
+    ctx.save();
+
+    // ── Layer 1: Expanding shockwave ring ──────────────────────────
+    const ringRadius = lifeRatio * 2.5 * scale;
+    const ringAlpha = (1 - lifeRatio) * 0.6; // 0.6 → 0
+    if (ringAlpha > 0.01) {
+      ctx.beginPath();
+      ctx.arc(sx, sy, ringRadius, 0, Math.PI * 2);
+      ctx.strokeStyle = hexToRgba(event.color, ringAlpha);
+      ctx.lineWidth = Math.max(0.8, (1 - lifeRatio) * 3);
+      ctx.stroke();
+    }
+
+    // ── Layer 2: Scattering glow particles ─────────────────────────
+    const particleAlpha = (1 - lifeRatio) * 0.85; // 0.85 → 0
+    for (const p of event.particles) {
+      const dist = lifeRatio * p.speed * 3 * scale;
+      const px = sx + Math.cos(p.angle) * dist;
+      const py = sy + Math.sin(p.angle) * dist;
+      const pr = p.radius * (1 - lifeRatio * 0.6) * scale * 0.6;
+
+      if (pr < 0.3) continue;
+
+      // Outer glow
+      ctx.shadowColor = event.color;
+      ctx.shadowBlur = pr * 3;
+      ctx.fillStyle = hexToRgba(event.color, particleAlpha);
+      ctx.beginPath();
+      ctx.arc(px, py, pr, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.shadowBlur = 0;
+
+      // Bright core
+      ctx.fillStyle = hexToRgba('#ffffff', particleAlpha * 0.4);
+      ctx.beginPath();
+      ctx.arc(px, py, pr * 0.35, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    ctx.restore();
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
 // COLOR HELPERS
 // ═══════════════════════════════════════════════════════════════════════
 
@@ -197,20 +340,28 @@ export function drawBackground(ctx, canvasW, canvasH, sim, scale) {
 /**
  * Draw the Behemoth base on a canvas context.
  *
- * Body: green radial gradient (organic identity) scaled by baseRadius.
- * Glow: level-colored outer ring, alpha modulated by VISUAL.intensity.
- * Label: level name centered on base, styled per VISUAL.fontStyle.
- * L4 (BEHEMOTH): glow alpha pulses between 0.7 and 1.0 at ~2 Hz.
+ * Layers (back to front):
+ *   1. Base-color glow: green (#2d6b3f) radial gradient from center,
+ *      radius and alpha scale with level. L1=default, L2=+15%, L3=+30%,
+ *      L4=+50%. Center alpha: L1=0.3, L2=0.35, L3=0.4, L4=0.5 — fades
+ *      to 0 at edge.
+ *   2. Body: green organic radial gradient (organic identity) scaled by
+ *      baseRadius.
+ *   3. Level-up flash: white overlay pulse (100ms fade on level change).
+ *   4. Shield ring: cyan (#22d3ee) stroked arc at base perimeter +2px,
+ *      pulse animation (alpha 0.5↔0.8 over 2s). Visible only when
+ *      sim.shield.hp > 0.
+ *   5. Label: level name centered below base.
  *
  * @param {CanvasRenderingContext2D} ctx
  * @param {object} sim — sim state (needs sim.baseCenter, sim.baseLevel,
- *   sim.baseRadius, sim.tick)
+ *   sim.baseRadius, sim.shield, sim.tick)
  * @param {number} scale — pixels per cell (canvas scale factor)
  */
 export function drawBase(ctx, sim, scale) {
-  const { baseCenter, baseLevel, baseRadius, tick } = sim;
+  const { baseCenter, baseLevel, baseRadius, tick, shield } = sim;
 
-  // Clamp level to VISUAL array bounds
+  // Clamp level to VISUAL array bounds (0-based: L1=0, L2=1, L3=2, L4=3)
   const level = Math.max(0, Math.min(baseLevel, LEVEL.VISUAL.length - 1));
   const visual = LEVEL.VISUAL[level];
 
@@ -218,13 +369,44 @@ export function drawBase(ctx, sim, scale) {
   const cy = baseCenter.y * scale;
   const radius = baseRadius * scale;
 
-  // ── Body: green organic gradient ──────────────────────────────────
+  // ── Level-up flash detection ──────────────────────────────────────
+  // When baseLevel changes (upward), set a 6-tick flash timer (~100ms)
+  if (sim._lastBaseLevel !== undefined && sim._lastBaseLevel !== baseLevel) {
+    sim._levelUpFlashUntil = tick + 6;
+  }
+  sim._lastBaseLevel = baseLevel;
+  const isFlashing = tick < (sim._levelUpFlashUntil ?? 0);
+
+  // ═════════════════════════════════════════════════════════════════
+  // LAYER 1: Base-color green glow (#2d6b3f) — scales with level
+  // ═════════════════════════════════════════════════════════════════
+  const glowMulByLevel = [1.0, 1.15, 1.3, 1.5];    // radius multiplier
+  const glowAlphaByLevel = [0.3, 0.35, 0.4, 0.5];   // center alpha
+
+  const glowMul = glowMulByLevel[level] || 1.0;
+  const centerAlpha = glowAlphaByLevel[level] || 0.3;
+  const baseGlowRadius = radius * glowMul;
+
+  ctx.save();
+  const baseGlowGrad = ctx.createRadialGradient(cx, cy, 0, cx, cy, baseGlowRadius);
+  baseGlowGrad.addColorStop(0, hexToRgba('#2d6b3f', centerAlpha));
+  baseGlowGrad.addColorStop(1, hexToRgba('#2d6b3f', 0));
+
+  ctx.beginPath();
+  ctx.arc(cx, cy, baseGlowRadius, 0, Math.PI * 2);
+  ctx.fillStyle = baseGlowGrad;
+  ctx.fill();
+  ctx.restore();
+
+  // ═════════════════════════════════════════════════════════════════
+  // LAYER 2: Body — green organic gradient
+  // ═════════════════════════════════════════════════════════════════
   ctx.save();
   const bodyGrad = ctx.createRadialGradient(
     cx - radius * 0.3, cy - radius * 0.3, radius * 0.1,
     cx, cy, radius
   );
-  bodyGrad.addColorStop(0, '#86efac');     // light green center
+  bodyGrad.addColorStop(0, '#86efac');     // light green centre
   bodyGrad.addColorStop(0.5, '#22c55e');   // mid green
   bodyGrad.addColorStop(1, '#166534');     // dark green edge
 
@@ -232,46 +414,48 @@ export function drawBase(ctx, sim, scale) {
   ctx.arc(cx, cy, radius, 0, Math.PI * 2);
   ctx.fillStyle = bodyGrad;
   ctx.fill();
+
+  // ── Level-up flash: white overlay, fades over 6 ticks ──────────
+  if (isFlashing) {
+    const flashRemaining = sim._levelUpFlashUntil - tick;
+    const flashAlpha = (flashRemaining / 6) * 0.4;   // 0.4 → 0 over 100ms
+    ctx.fillStyle = hexToRgba('#ffffff', Math.max(0, flashAlpha));
+    ctx.fill();
+  }
   ctx.restore();
 
-  // ── Glow: level-colored outer ring ────────────────────────────────
-  const glowRadius = radius * 1.5;
-  let glowAlpha = visual.intensity;
+  // ═════════════════════════════════════════════════════════════════
+  // LAYER 3: Shield ring — cyan (#22d3ee) pulse when shield HP > 0
+  // ═════════════════════════════════════════════════════════════════
+  if (shield && shield.hp > 0 && shield.maxHp > 0) {
+    const shieldRatio = shield.hp / shield.maxHp;
 
-  // L4 BEHEMOTH: pulsing glow (0.7–1.0 at ~2 Hz, sin 0.125 × tick)
-  if (visual.fontStyle === 'pulsing') {
-    const pulse = (Math.sin(tick * 0.125) + 1) / 2;  // 0.0–1.0 wave
-    glowAlpha = 0.7 + pulse * 0.3;                    // 0.7–1.0 range
+    // Pulse alpha: oscillate 0.5 → 0.8 over 2s (120 ticks at 60 tps)
+    const pulse = (Math.sin(tick * Math.PI / 60) + 1) / 2;   // 0.0–1.0 wave
+    const pulseAlpha = 0.5 + pulse * 0.3;                     // 0.5–0.8
+
+    const ringRadius = radius + 2 * scale;
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(cx, cy, ringRadius, 0, Math.PI * 2);
+    ctx.strokeStyle = hexToRgba('#22d3ee', pulseAlpha * shieldRatio);
+    ctx.lineWidth = Math.max(2, 2 * scale);
+    ctx.stroke();
+    ctx.restore();
   }
 
-  ctx.save();
-  const glowGrad = ctx.createRadialGradient(cx, cy, radius * 0.8, cx, cy, glowRadius);
-  glowGrad.addColorStop(0, hexToRgba(visual.color, 0));
-  glowGrad.addColorStop(0.5, hexToRgba(visual.color, glowAlpha * 0.5));
-  glowGrad.addColorStop(1, hexToRgba(visual.color, 0));
-
-  ctx.beginPath();
-  ctx.arc(cx, cy, glowRadius, 0, Math.PI * 2);
-  ctx.fillStyle = glowGrad;
-  ctx.fill();
-  ctx.restore();
-
-  // ── Label: level name ─────────────────────────────────────────────
-  const font = formatLabelFont(visual.fontStyle);
-  const text = formatLabelText(visual.fontStyle, visual.label);
-
-  let textAlpha = 1.0;
-  // L4 pulsing label alpha too
-  if (visual.fontStyle === 'pulsing') {
-    const pulse = (Math.sin(tick * 0.125) + 1) / 2;
-    textAlpha = 0.7 + pulse * 0.3;
-  }
+  // ═════════════════════════════════════════════════════════════════
+  // LAYER 4: Label — level name centred below base
+  // ═════════════════════════════════════════════════════════════════
+  const font = 'bold 10px "Courier New", monospace';
+  const text = visual.label || `Level ${level + 1}`;
 
   ctx.save();
   ctx.font = font;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.fillStyle = hexToRgba('#ffffff', textAlpha * 0.9);
+  ctx.fillStyle = hexToRgba(visual.labelColor || '#ffffff', 0.9);
   ctx.fillText(text, cx, cy + radius + 6 * scale);
   ctx.restore();
 }
@@ -279,19 +463,6 @@ export function drawBase(ctx, sim, scale) {
 // ═══════════════════════════════════════════════════════════════════════
 // ENTITY DRAWING — ENEMIES & TURRETS
 // ═══════════════════════════════════════════════════════════════════════
-
-/**
- * Visual tokens per enemy type — colours and shapes for the renderer.
- * Mirrors BehemothGame.jsx ENEMY_TYPE_STYLE but lives in the render
- * layer so canvas drawing doesn't depend on React component constants.
- */
-const ENEMY_VISUAL = {
-  scout:     { color: '#60a5fa', glowColor: '#93c5fd', shape: 'diamond' },
-  tank:      { color: '#f59e0b', glowColor: '#fcd34d', shape: 'hexagon' },
-  artillery: { color: '#ef4444', glowColor: '#fca5a5', shape: 'cross' },
-  crawler:   { color: '#34d399', glowColor: '#6ee7b7', shape: 'dot' },
-  boss:      { color: '#c084fc', glowColor: '#d8b4fe', shape: 'pentagram' },
-};
 
 /**
  * Draw a thin health bar above an entity's world position.
@@ -364,6 +535,9 @@ function drawHealthBar(ctx, screenX, screenY, hp, maxHp, entitySize, scale) {
 export function drawEnemies(ctx, sim, scale) {
   const { enemies = [], tick = 0 } = sim;
   if (enemies.length === 0) return;
+
+  // Record deaths BEFORE drawing live enemies (so particles spawn same frame)
+  recordDeathParticles(enemies, tick);
 
   for (const enemy of enemies) {
     if (!enemy.alive) continue;

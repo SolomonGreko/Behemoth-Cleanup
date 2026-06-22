@@ -7,7 +7,7 @@
  */
 
 // Config
-export { RESOURCE, COST, ECON, ENEMY, WAVE, SWARM, SCALING, BASE, LEVEL, DAY_CYCLE, TURRET, BOT } from './config.js';
+export { RESOURCE, COST, ECON, ENEMY, WAVE, SWARM, SCALING, BASE, LEVEL, DAY_CYCLE, TURRET, BOT, ARTILLERY } from './config.js';
 
 // Policy module
 export {
@@ -56,6 +56,8 @@ export {
   expectedCrystalPerKill,
   validateDropTables,
   estimateWaveCrystalIncome,
+  findArtilleryTarget,
+  tickArtilleryEnemy,
 } from './enemies.js';
 
 // Labour allocator
@@ -120,6 +122,7 @@ export {
   drawBackground,
   drawBase,
   drawEnemies,
+  drawDeathParticles,
   drawTurrets,
   drawWalls,
 } from './render.js';

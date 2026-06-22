@@ -37,6 +37,7 @@ import {
 } from './walls.js';
 import { generateStoneZones } from './world.js';
 import { assignStoneHarvest, tickStoneHarvest, tickStoneReturn } from './bots.js';
+import { tickArtilleryEnemy } from './enemies.js';
 
 // ═══════════════════════════════════════════════════════════════════════
 // RESOURCE STATE
@@ -448,11 +449,15 @@ function getWaveComposition(waveNum) {
   const waveTier = Math.floor(waveNum / 5);
   const scoutRatio = Math.max(0.2, 0.6 - waveTier * 0.1);
   const tankRatio = Math.min(0.5, 0.2 + waveTier * 0.05);
-  const artyRatio = 1.0 - scoutRatio - tankRatio;
+  // Artillery appears wave 4+ per ENEMY config — early waves split
+  // the artillery budget between scouts and tanks instead.
+  const artyUnlocked = waveNum >= 4;
+  const artyRatio = artyUnlocked ? (1.0 - scoutRatio - tankRatio) : 0;
+  const spillover = 1.0 - scoutRatio - tankRatio - artyRatio; // >0 when arty locked
 
-  const scouts = Math.floor(actualCount * scoutRatio);
-  const tanks = Math.floor(actualCount * tankRatio);
-  const arty = actualCount - scouts - tanks;
+  const scouts = Math.floor(actualCount * (scoutRatio + spillover * 0.6));
+  const tanks = Math.floor(actualCount * (tankRatio + spillover * 0.4));
+  const arty = artyUnlocked ? Math.max(0, actualCount - scouts - tanks) : 0;
 
   if (scouts > 0) groups.push({ type: 'scout', count: scouts });
   if (tanks > 0) groups.push({ type: 'tank', count: tanks });
@@ -553,6 +558,15 @@ function tickEnemies(sim) {
 
   for (const enemy of sim.enemies) {
     if (!enemy.alive) continue;
+
+    // Artillery enemies: run ranged attack behavior first.
+    // If they transition to 'firing', skip normal movement — they're
+    // stationary and shooting. If they stay in 'moving', fall through
+    // to normal movement so they can walk into range.
+    if (enemy.type === 'artillery') {
+      tickArtilleryEnemy(sim, enemy, damageWall, _applyBaseDamage);
+      if (enemy.state === 'firing') continue;
+    }
 
     if (enemy.state === 'moving') {
       // Check for wall collision before moving

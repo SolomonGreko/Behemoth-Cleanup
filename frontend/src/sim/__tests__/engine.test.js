@@ -14,7 +14,9 @@ import {
   getStats,
   getWavePreview,
 } from '../engine.js';
-import { BASE, WAVE, SWARM, DAY_CYCLE, BOT } from '../config.js';
+import { BASE, WAVE, SWARM, DAY_CYCLE, BOT, ARTILLERY } from '../config.js';
+import { findArtilleryTarget, tickArtilleryEnemy } from '../enemies.js';
+import { damageWall } from '../walls.js';
 
 // ═══════════════════════════════════════════════════════════════════════
 // createSim
@@ -496,6 +498,111 @@ describe('engine — day/night cycle', () => {
     stepTick(sim);
     expect(sim.wave).toBe(1);
     expect(sim.waveState).toBe('spawning');
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════
+// Artillery ranged attack behavior
+// ═══════════════════════════════════════════════════════════════════════
+
+describe('engine — artillery behavior', () => {
+  it('artillery enemy transitions to firing state when base is in range', () => {
+    const sim = sim10x10();
+    // Place artillery 4 cells from base (within 5.0 attackRange)
+    const arty = {
+      id: 999, type: 'artillery', x: 1, y: 5, hp: 12, maxHp: 12,
+      speed: 0.008, damage: 8, size: 1.0, alive: true, wave: 5,
+      state: 'moving', _artyCooldown: 0, _artyShotsFired: 0,
+    };
+    sim.enemies.push(arty);
+    // Mock functions — damageWall and _applyBaseDamage aren't exported,
+    // so we test via integration using stepTick or use no-op stubs.
+    const noopDmg = () => {};
+    tickArtilleryEnemy(sim, arty, () => ({ destroyed: false }), noopDmg);
+    expect(arty.state).toBe('firing');
+    expect(arty._artyTarget).not.toBeNull();
+    expect(arty._artyTarget.type).toBe('base');
+  });
+
+  it('artillery enemy does not fire when out of range', () => {
+    const sim = createSim({ worldWidth: 50, worldHeight: 50 });
+    // Place artillery far from base (distance ~20 cells, range is 5)
+    const arty = {
+      id: 999, type: 'artillery', x: 5, y: 25, hp: 12, maxHp: 12,
+      speed: 0.008, damage: 8, size: 1.0, alive: true, wave: 5,
+      state: 'moving', _artyCooldown: 0, _artyShotsFired: 0,
+    };
+    // baseCenter is at (25, 25), distance = 20
+    sim.enemies.push(arty);
+    tickArtilleryEnemy(sim, arty, () => ({}), () => {});
+    expect(arty.state).toBe('moving'); // stays moving — out of range
+  });
+
+  it('artillery self-destructs after maxShots', () => {
+    const sim = sim10x10();
+    const arty = {
+      id: 999, type: 'artillery', x: 1, y: 5, hp: 12, maxHp: 12,
+      speed: 0.008, damage: 8, size: 1.0, alive: true, wave: 5,
+      state: 'moving', _artyCooldown: 0,
+      _artyShotsFired: ARTILLERY.maxShots, // already exhausted
+    };
+    sim.enemies.push(arty);
+    tickArtilleryEnemy(sim, arty, () => ({}), () => {});
+    expect(arty.alive).toBe(false);
+    expect(sim.waveEnemiesRemaining).toBe(-1); // decremented
+  });
+
+  it('artillery fires at base and increments shot counter', () => {
+    const sim = sim10x10();
+    const arty = {
+      id: 999, type: 'artillery', x: 1, y: 5, hp: 12, maxHp: 12,
+      speed: 0.008, damage: 8, size: 1.0, alive: true, wave: 5,
+      state: 'moving', _artyCooldown: 0, _artyShotsFired: 0,
+    };
+    sim.enemies.push(arty);
+    let baseDmgDealt = 0;
+    tickArtilleryEnemy(sim, arty, () => ({}), (_sim, dmg) => { baseDmgDealt += dmg; });
+    expect(arty._artyShotsFired).toBe(1);
+    expect(baseDmgDealt).toBe(ARTILLERY.attackDamage);
+    expect(arty._artyCooldown).toBe(ARTILLERY.attackCooldown);
+  });
+
+  it('artillery targets wall when wall blocks line of sight to base', () => {
+    const sim = createSim({ worldWidth: 30, worldHeight: 30 });
+    // Place a wall between artillery and base, within attackRange (5 cells)
+    sim.walls.push({
+      id: 1, x: 8, y: 15, hp: 30, maxHp: 30, alive: true,
+      radius: 0.8, level: 0, label: 'Barricade',
+    });
+    // Artillery at x=3, base at x=15, y=15. Wall at x=8 blocks, dist=5 from arty.
+    const arty = {
+      id: 999, type: 'artillery', x: 3, y: 15, hp: 12, maxHp: 12,
+      speed: 0.008, damage: 8, size: 1.0, alive: true, wave: 5,
+      state: 'moving', _artyCooldown: 0, _artyShotsFired: 0,
+    };
+    sim.enemies.push(arty);
+    let wallDmgDealt = 0;
+    tickArtilleryEnemy(sim, arty,
+      (_sim, wall, dmg) => { wallDmgDealt += dmg; return { destroyed: false }; },
+      () => {}
+    );
+    expect(arty.state).toBe('firing');
+    expect(arty._artyTarget.type).toBe('wall');
+    expect(wallDmgDealt).toBe(ARTILLERY.attackDamage);
+  });
+
+  it('artillery excluded from waves 1-3, present wave 4+', () => {
+    // Wave 1: no artillery
+    const sim1 = sim10x10();
+    stepTicks(sim1, WAVE.cooldownTicks); // start wave 1
+    const hasArty1 = sim1.waveComposition.some(g => g.type === 'artillery');
+    expect(hasArty1).toBe(false);
+
+    // Wave 4: artillery should appear
+    const sim4 = sim10x10();
+    runWavesUntil(sim4, 4);
+    const hasArty4 = sim4.waveComposition.some(g => g.type === 'artillery');
+    expect(hasArty4).toBe(true);
   });
 });
 

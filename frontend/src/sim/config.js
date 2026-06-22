@@ -158,6 +158,36 @@ export const ENEMY = {
 };
 
 /**
+ * ARTILLERY — ranged enemy attack behavior.
+ *
+ * Artillery enemies stop at attackRange from their target (base or wall)
+ * and fire projectiles on a cooldown. They are the only enemy type with
+ * ranged capability — this makes them "dangerous, must prioritize" as
+ * described in the ENEMY header.
+ *
+ * attackRange is measured from the artillery's position to the target.
+ * If the target is the base, the range is to base center. If the target
+ * is a wall, the range is to the wall's position.
+ *
+ * attackCooldown is measured in ticks (~60 ticks/second at 60fps).
+ *
+ * Default values produce day-one gameplay:
+ *   - Artillery stops ~5 cells from base/walls and fires every 2s.
+ *   - Each shot deals 4 damage (half of melee damage, but ranged and safe).
+ *   - Enemies killed by artillery shots do NOT count toward sim.kills
+ *     (only base contact kills track kills). They DO count as wave enemies
+ *     removed for wave-clear detection.
+ *
+ * Athena owns balance tuning of these values.
+ */
+export const ARTILLERY = {
+  attackRange: 5.0,         // cells — stop and fire when within this distance
+  attackCooldown: 120,      // ticks between shots (2s at 60fps)
+  attackDamage: 4,          // damage per shot (half of melee, ranged trade-off)
+  maxShots: 8,              // shots before self-destruct (ammo exhaustion)
+};
+
+/**
  * SCALING — wave-based enemy stat scaling multipliers.
  *
  * Each wave increases enemy stats multiplicatively from their base values.
