@@ -13,7 +13,7 @@ import {
   getWavePreview, DAY_CYCLE, LEVEL, RESOURCE, toggleSound,
   drawBackground, drawBase, drawStoneZones, drawEnemies, drawDeathParticles,
   drawCrystalDrops, drawBossShockwaves, drawTurrets, drawBots,
-  drawWalls, drawDayNightOverlay, drawSelectionRing,
+  drawWalls, drawDayNightOverlay, drawSelectionRing, drawBaseParticles,
   findTurretAt, selectTurret, deselectTurret,
   getTurretById, buyBot, buyWatcher, buyWall, togglePause, regenerateSim,
 } from '../sim/index.js';
@@ -320,6 +320,7 @@ export function BehemothGame({ sim }) {
       drawBackground(ctx, canvasW, canvasH, s, scale);
       drawStoneZones(ctx, s, scale);
       drawBase(ctx, s, scale);
+      drawBaseParticles(ctx, s, tick);
       drawWalls(ctx, s, scale);
       drawEnemies(ctx, s, scale);
       drawTurrets(ctx, s, scale);

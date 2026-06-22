@@ -143,4 +143,5 @@ export {
   drawWalls,
   drawDayNightOverlay,
   drawSelectionRing,
+  drawBaseParticles,
 } from './render.js';
