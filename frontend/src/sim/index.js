@@ -124,5 +124,6 @@ export {
   drawEnemies,
   drawDeathParticles,
   drawTurrets,
+  drawBots,
   drawWalls,
 } from './render.js';

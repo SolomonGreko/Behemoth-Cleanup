@@ -293,22 +293,11 @@ export function tickArtilleryEnemy(sim, enemy, damageWallFn, applyBaseDmgFn) {
     return;
   }
 
-  // We have a target — transition to firing
-  if (enemy.state === 'moving') {
-    enemy.state = 'firing';
-    enemy._artyTarget = target;
-  }
-
-  // Re-evaluate target: if targeting a wall that died, find new target
-  if (target.type === 'wall' && !target.wall.alive) {
-    const newTarget = findArtilleryTarget(sim, enemy);
-    if (!newTarget) {
-      enemy.state = 'moving';
-      enemy._artyTarget = null;
-      return;
-    }
-    enemy._artyTarget = newTarget;
-  }
+  // We have a target — stay in firing mode and track the current target.
+  // Always update _artyTarget every tick so we re-acquire if the
+  // targeted wall dies (findArtilleryTarget already excludes dead walls).
+  enemy.state = 'firing';
+  enemy._artyTarget = target;
 
   // Fire when cooldown is up
   if (enemy._artyCooldown <= 0) {

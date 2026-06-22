@@ -890,6 +890,166 @@ function drawTurret(ctx, turret, scale) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
+// BOT DRAWING
+// ═══════════════════════════════════════════════════════════════════════
+
+/**
+ * Visual tokens for Chime-Forged worker bots.
+ *
+ * Colour palette per state — industrial steel-blue baseline with
+ * functional state tints mapped to the BotLabourHUD colour scheme:
+ *   MOVING/IDLE: steel blue (infrastructure)
+ *   HARVEST_STONE: amber (resource-gathering)
+ *   RETURN_STONE: sky-cyan (returning with cargo)
+ *   DEPOSIT_STONE: emerald flash (unloading at base)
+ */
+const BOT_VISUAL = {
+  base:       { fill: '#4ea0c9', glow: '#6ba4c7', label: 'Idle' },
+  moving:     { fill: '#4ea0c9', glow: '#6ba4c7', label: 'Moving' },
+  harvesting: { fill: '#fbbf24', glow: '#fcd34d', label: 'Harvesting' },  // amber — matches HRV
+  returning:  { fill: '#38bdf8', glow: '#7dd3fc', label: 'Returning' },   // sky — matches RTR
+  depositing: { fill: '#34d399', glow: '#6ee7b7', label: 'Depositing' },  // emerald flash
+};
+
+/** State-to-visual-key mapping. Falls back to base for unrecognised states. */
+const BOT_STATE_VISUAL = {
+  IDLE:           'base',
+  MOVING:         'moving',
+  HARVEST_STONE:  'harvesting',
+  RETURN_STONE:   'returning',
+  DEPOSIT_STONE:  'depositing',
+};
+
+/**
+ * Draw all worker bots on the canvas.
+ *
+ * Bots render as small hexagonal chassis — an industrial counterpart to
+ * the larger turret hex shapes. State-dependent colour tells the player
+ * what each bot is doing without reading the HUD. Bots carrying stone
+ * show an amber cargo dot. Moving bots leave a subtle motion trail.
+ *
+ * Called after turrets, before walls — bots are mobile infrastructure
+ * that moves between resource zones and the base.
+ *
+ * @param {CanvasRenderingContext2D} ctx
+ * @param {object} sim — sim state (reads sim.bots, sim.tick)
+ * @param {number} scale — pixels per cell
+ */
+export function drawBots(ctx, sim, scale) {
+  const { bots = [], tick = 0 } = sim;
+  if (bots.length === 0) return;
+
+  for (const bot of bots) {
+    drawBot(ctx, bot, scale, tick);
+  }
+}
+
+/**
+ * Draw a single worker bot.
+ *
+ * Renders as a small flat-top hexagon (echoes turret shape language at
+ * reduced scale). State-driven colour changes are instant (no lerp) so
+ * the player can read bot intent at a glance.
+ *
+ * Visual elements (back to front):
+ *   1. Motion trail — 2 fading dots behind the bot when moving
+ *   2. Hexagon chassis — filled + stroked, state-coloured
+ *   3. Cargo dot — amber centre dot when carryingStone > 0
+ *   4. Deposit flash — emerald ring pulse when at DEPOSIT_STONE
+ *
+ * @param {CanvasRenderingContext2D} ctx
+ * @param {object} bot — { x, y, state, size, carryingStone, speed, ... }
+ * @param {number} scale — pixels per cell
+ * @param {number} tick — current sim tick (for deposit pulse)
+ */
+function drawBot(ctx, bot, scale, tick) {
+  const visualKey = BOT_STATE_VISUAL[bot.state] || 'base';
+  const visual = BOT_VISUAL[visualKey] || BOT_VISUAL.base;
+  const sx = bot.x * scale;
+  const sy = bot.y * scale;
+  const r = (bot.size || 0.6) * scale;
+
+  const isMoving = bot.state === 'MOVING'
+    || bot.state === 'HARVEST_STONE'
+    || bot.state === 'RETURN_STONE';
+
+  ctx.save();
+
+  // ── Motion trail (moving bots only) ─────────────────────────────
+  if (isMoving && bot.speed > 0) {
+    // Direction inferred from target or recent movement
+    const dirX = bot.targetX != null ? bot.targetX - bot.x : 0;
+    const dirY = bot.targetY != null ? bot.targetY - bot.y : 0;
+    const dirLen = Math.sqrt(dirX * dirX + dirY * dirY) || 1;
+    const ndx = dirX / dirLen;
+    const ndy = dirY / dirLen;
+
+    // Two trail dots behind the bot, fading with distance
+    for (let t = 1; t <= 2; t++) {
+      const trailAlpha = 0.3 - t * 0.12;       // 0.18, 0.06
+      if (trailAlpha <= 0.01) continue;
+      const tx = sx - ndx * r * t * 1.6;
+      const ty = sy - ndy * r * t * 1.6;
+      const tr = r * (0.45 - t * 0.12);
+
+      ctx.fillStyle = hexToRgba(visual.glow, trailAlpha);
+      ctx.beginPath();
+      ctx.arc(tx, ty, tr, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  // ── Subtle outer glow ───────────────────────────────────────────
+  ctx.shadowColor = visual.glow;
+  ctx.shadowBlur = r * 0.35;
+
+  // ── Hexagonal chassis ───────────────────────────────────────────
+  const sides = 6;
+  ctx.beginPath();
+  for (let i = 0; i < sides; i++) {
+    const angle = -Math.PI / 6 + (Math.PI * 2 * i) / sides;  // flat-top
+    const px = sx + r * 0.8 * Math.cos(angle);
+    const py = sy + r * 0.8 * Math.sin(angle);
+    if (i === 0) ctx.moveTo(px, py);
+    else ctx.lineTo(px, py);
+  }
+  ctx.closePath();
+
+  ctx.fillStyle = hexToRgba(visual.fill, 0.55);
+  ctx.fill();
+  ctx.strokeStyle = hexToRgba(visual.fill, 0.85);
+  ctx.lineWidth = Math.max(0.8, r * 0.15);
+  ctx.stroke();
+
+  ctx.shadowBlur = 0;
+
+  // ── Cargo dot (carrying stone) ──────────────────────────────────
+  if (bot.carryingStone > 0) {
+    const cargoR = r * 0.28;
+    ctx.fillStyle = '#fbbf24';   // amber — matches stone resource
+    ctx.shadowColor = '#fcd34d';
+    ctx.shadowBlur = cargoR * 2.5;
+    ctx.beginPath();
+    ctx.arc(sx, sy, cargoR, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+  }
+
+  // ── Deposit flash (unloading at base) ───────────────────────────
+  if (bot.state === 'DEPOSIT_STONE') {
+    const pulse = (Math.sin(tick * 0.4) + 1) / 2;   // ~4 Hz shimmer
+    const ringAlpha = 0.3 + pulse * 0.4;              // 0.3–0.7
+    ctx.strokeStyle = hexToRgba('#6ee7b7', ringAlpha);
+    ctx.lineWidth = Math.max(1, r * 0.2);
+    ctx.beginPath();
+    ctx.arc(sx, sy, r * 1.1, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+
+  ctx.restore();
+}
+
+// ═══════════════════════════════════════════════════════════════════════
 // WALL DRAWING
 // ═══════════════════════════════════════════════════════════════════════
 

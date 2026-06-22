@@ -738,7 +738,53 @@ function tickDayCycle(sim) {
 // HUD SNAPSHOT
 // ═══════════════════════════════════════════════════════════════════════
 
+/**
+ * Summarise bot activity by state for the HUD's BotLabourHUD component.
+ *
+ * Maps internal bot states to the display keys the HUD expects:
+ *   harvesting — HARVEST_STONE + DEPOSIT_STONE
+ *   returning  — RETURN_STONE
+ *   repairing  — (reserved for future wall-repair bots)
+ *   building   — (reserved for future construction bots)
+ *   tilling    — (reserved for future garden bots)
+ *   idle       — IDLE + any unrecognised state
+ *
+ * @param {object} sim — sim state
+ * @returns {{ harvesting: number, returning: number, repairing: number, building: number, tilling: number, idle: number }}
+ */
+export function getLabourSummary(sim) {
+  const summary = {
+    harvesting: 0,
+    returning: 0,
+    repairing: 0,
+    building: 0,
+    tilling: 0,
+    idle: 0,
+  };
+
+  for (const bot of sim.bots) {
+    switch (bot.state) {
+      case 'HARVEST_STONE':
+      case 'DEPOSIT_STONE':
+        summary.harvesting++;
+        break;
+      case 'RETURN_STONE':
+        summary.returning++;
+        break;
+      case 'IDLE':
+        summary.idle++;
+        break;
+      default:
+        summary.idle++;
+    }
+  }
+
+  return summary;
+}
+
 function buildHUD(sim) {
+  const phaseDuration = DAY_CYCLE.phaseDurations[sim.dayPhase] ?? 1;
+
   return {
     tick: sim.tick,
     wave: sim.wave,
@@ -754,6 +800,10 @@ function buildHUD(sim) {
     wallCount: sim.walls.filter((w) => w.alive).length,
     walls: getWallSummary(sim),
     dayPhase: sim.dayPhase,
+    phaseTick: sim.dayTimer,
+    phaseDuration,
+    phaseBlend: sim.dayTransition,
+    botLabour: getLabourSummary(sim),
     gameOver: sim.gameOver,
     soundEnabled: sim.soundEnabled,
     resources: sim.resourceHUD?.resources || null,

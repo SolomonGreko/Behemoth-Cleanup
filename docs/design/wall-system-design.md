@@ -46,7 +46,7 @@ All in the `WALL` config block in `config.js`:
 
 | Parameter | Value | Rationale |
 |-----------|-------|-----------|
-| `repairRate` | 0.5 HP/tick | A bot repairs 30 HP per minute. One bot can sustain an L1 wall under light siege; three bots can sustain an L3 wall. Repair is slow enough that the player still feels wall damage pressure, fast enough that repair is worth assigning bots. |
+| `repairRate` | 0.5 HP/tick | A bot repairs 30 HP per second (0.5 × 60 ticks/sec). One bot can sustain an L1 wall under light siege; three bots can sustain an L3 wall. Repair is slow enough that the player still feels wall damage pressure, fast enough that repair is worth assigning bots. |
 | `repairRange` | 1.5 cells | Same as bot deposit range. Consistency with existing bot movement patterns. |
 | `placementMinDistance` | 3 cells | Walls can't be placed adjacent to the base. This creates a tactical ring: inner ring = turrets, outer ring = walls. Prevents degenerate "wall directly on base" strategy. |
 | `placementMaxDistance` | 15 cells | Walls can't be placed at the map edge. Forces the player to engage enemies before they reach the wall line. Matches the stone zone max distance for thematic consistency. |

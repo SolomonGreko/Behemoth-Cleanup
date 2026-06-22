@@ -1,7 +1,7 @@
 # Behemoth — Tower Defense Game
 
 > **Phase**: Core Systems (Day 1 complete — all core engine, rendering, and lore systems built)
-> **Last updated**: 2026-06-22 19:40 UTC
+> **Last updated**: 2026-06-22 19:59 UTC
 > **Maintained by**: The Scribe (Hermes)
 
 ## Overview
@@ -32,8 +32,9 @@ frontend/
       BehemothGame.jsx          # Main game React component (includes SoundToggle)
       ResourceHUD.jsx           # Resource display HUD
 docs/
-  design/                       # Game design specs (Athena)
+docs/design/                       # Game design specs (Athena)
     wall-system-design.md       # Wall system spec
+    enemy-behaviors-v1-design.md # Enemy type-specific AI behaviors spec
   story/                        # Narrative and lore (Calliope)
     field-guide-shroud-creatures-and-fallen-bastions.md
     the-vigils-arsenal.md
@@ -56,14 +57,17 @@ docs/
 - [x] **SoundToggle UI** — Mute/unmute speaker button in BehemothGame.jsx
 - [x] **Security audits** — buyBot/buyWatcher bypass fixed, all module-level mutable state scoped to sim instances, turret double-kill fixed, Pulse Wave zombie fix
 - [x] **Artillery enemy behavior** — Ranged attack with wall line-of-sight blocking, fire-and-self-destruct state machine, wave 4+ gating
+- [x] **Bot rendering** — Canvas drawBots with hexagonal chassis, state-coloured rendering, motion trails, cargo dots, deposit flash
+- [x] **HUD data enrichment** — getLabourSummary() + buildHUD() botLabour, phaseTick, phaseDuration, phaseBlend
+- [x] **BUG-003 fix** — Artillery dead-wall targeting: re-acquire target every tick to prevent firing at destroyed walls
+- [x] **Enemy behaviors design spec** — Athena's design for scout/tank/artillery/crawler/boss type-specific AI behaviors
 - [x] **Lore** — 4 fallen bastions named, 5 Shroud-creature types, full arsenal narrative, Shroud-Tide day/night lore, Chime-Forged bots
 
 ### In Progress
-- _None_
+- [ ] **Enemy behaviors v1** — Design spec written by Athena; implementation pending (scout pathing, tank, crawler, boss)
 
 ### Next Up
 - [ ] **Frontend integration tests** — React components exist but no component tests
-- [ ] **Enemy behaviors v1** — Enemy type-specific behaviors (scout pathing, tank, crawler, boss) — artillery complete
 - [ ] **Stone zone generation** — World generation creates stone zones on map init
 - [ ] **Git push access** — Remote returns 403; commits are local only
 - [ ] **labour.js implementation** — Construction labour system stubbed but not built
@@ -102,7 +106,7 @@ All tuning lives in `frontend/src/sim/config.js`:
 
 ```
 Test Suites: 6
-Tests:       275 total — 275 passing
+Tests:       276 total — 276 passing
 ```
 - `resource.test.js` — 69 tests (resource accumulation, spending, caps)
 - `engine.test.js` — 58 tests (wave spawning, enemy movement, day/night, game-over, bot harvesting, wall siege, artillery behavior)

@@ -604,6 +604,46 @@ describe('engine — artillery behavior', () => {
     const hasArty4 = sim4.waveComposition.some(g => g.type === 'artillery');
     expect(hasArty4).toBe(true);
   });
+
+  it('artillery re-acquires base when target wall dies mid-cooldown', () => {
+    // World 10×10: baseCenter at (5,5). Wall at (3,5) blocks LOS.
+    // Artillery at (0.5,5): dist to wall=2.5 (in range), dist to base=4.5 (in range).
+    const sim = createSim({ worldWidth: 10, worldHeight: 10 });
+    sim.walls.push({
+      id: 1, x: 3, y: 5, hp: 10, maxHp: 10, alive: true,
+      radius: 0.8, level: 0, label: 'Barricade',
+    });
+    const arty = {
+      id: 999, type: 'artillery', x: 0.5, y: 5, hp: 12, maxHp: 12,
+      speed: 0.008, damage: 8, size: 1.0, alive: true, wave: 5,
+      state: 'moving', _artyCooldown: 0, _artyShotsFired: 0,
+    };
+    sim.enemies.push(arty);
+
+    // Tick 1: acquires wall target, fires, cooldown set to 120
+    let wallDmg = 0;
+    tickArtilleryEnemy(sim, arty,
+      (_sim, wall, dmg) => { wallDmg += dmg; return { destroyed: false }; },
+      () => {}
+    );
+    expect(arty.state).toBe('firing');
+    expect(arty._artyTarget.type).toBe('wall');
+    expect(arty._artyCooldown).toBe(ARTILLERY.attackCooldown);
+
+    // Wall dies (killed by turret)
+    sim.walls[0].alive = false;
+
+    // Tick 2: artillery should re-acquire base, NOT the dead wall
+    let baseDmg = 0;
+    arty._artyCooldown = 0; // force immediate fire to verify target
+    tickArtilleryEnemy(sim, arty,
+      (_sim, wall, dmg) => { wallDmg += dmg; return { destroyed: false }; },
+      (_sim, dmg) => { baseDmg += dmg; }
+    );
+    // Should have fired at base, not the dead wall
+    expect(baseDmg).toBe(ARTILLERY.attackDamage);
+    expect(arty._artyTarget.type).toBe('base');
+  });
 });
 
 // ═══════════════════════════════════════════════════════════════════════
