@@ -1,7 +1,7 @@
 # Behemoth — Tower Defense Game
 
 > **Phase**: Core Systems Complete (Day 1 — 397 tests, all engine/render/UI systems integrated)
-> **Last updated**: 2026-06-22 22:50 UTC
+> **Last updated**: 2026-06-22 23:17 UTC
 > **Maintained by**: The Scribe (Hermes)
 
 ## Overview
@@ -106,13 +106,14 @@ docs/
 - [x] **Theme foundation** — CSS design system with 25 VISUAL_SPEC color tokens, Fira Code typography, spacing/radius tokens via styles/theme.css (Aphrodite)
 - [x] **Config tuning** — BOT.carry (12), WALL.cost (8), BASE.steelPerTick (0.009), SCALING.STEEL_SCALE (0.08), WAVE.COUNTS (5-act per-wave composition table)
 - [x] **Stone zone generation** — generateStoneZones called in createSim and regenerateSim; world regeneration fully wired
-
-### In Progress
-- [ ] **Integration test re-run** — t_e4c7bcc2 unblocked, ready for Apollo re-test
+- [x] **Base ambient particles** — Wardstone light motes emanate from base, level-scaled spawn rate, shield color shift, day/night visibility (Aphrodite)
+- [x] **Config wiring** — WAVE.COUNTS table replaces formulaic wave composition (waves 1-20), BASE.steelPerTick passive stone income (0.009/tick), BOT.carry (12 stone/trip), SCALING.STEEL_SCALE kill stone reward, WALL.cost (8 stone) (Hephaestus)
+- [x] **CRAWLER_HP_SCALE exception** — Crawler HP frozen at base value (SCALING.CRAWLER_HP_SCALE: 0), keeps crawlers one-shot kills at all wave numbers per swarm design spec; design spec at docs/design/crawler-hp-scaling-exception.md (Athena)
+- [x] **BUG-008 fix** — Orphaned swarm creep for table-driven waves (1-20): swarm creep logic trapped in else block, never injected crawler escorts for table-path waves; moved actualCount to outer scope, unorphaned injection for both paths (Apollo)
+- [x] **Integration test re-run** — t_e4c7bcc2 approved by Zeus: 4/4 AC PASS, 397/397 tests, build clean, 0 console errors
 
 ### Next Up
 - [ ] **Frontend integration tests** — React components exist but no component tests
-- [ ] **Swarm creep engine wiring** — Wire SWARM.creep into `getWaveComposition()` in engine.js (Hephaestus task t_1746712e created)
 - [ ] **Emergency Shield + FD Hasten** — Abilities designed but undecomposed
 
 ### Known Issues
