@@ -216,6 +216,7 @@ export function createSim(options = {}) {
     effRootSpeed: 1.0,
 
     gameOver: false,
+    paused: false,
     soundEnabled: true,
 
     // Selection state — set by click-to-select on turrets
@@ -336,6 +337,13 @@ function tickBase(sim) {
 // ═══════════════════════════════════════════════════════════════════════
 
 export function stepTick(sim, options = {}) {
+  // Pause gate: freeze all simulation logic, but still build HUD each
+  // tick so the UI stays reactive to state changes made by player actions.
+  if (sim.paused) {
+    sim.hud = buildHUD(sim);
+    return;
+  }
+
   sim.tick++;
 
   tickDayCycle(sim);
@@ -1163,6 +1171,104 @@ export function buyWallUpgrade(sim, wallId) {
   }
 
   return { success: true, wallId: wall.id };
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// PAUSE — freeze/unfreeze the simulation
+// ═══════════════════════════════════════════════════════════════════════
+
+/**
+ * Toggle the sim paused state.
+ * When paused, stepTick skips all simulation logic.
+ * @param {object} sim
+ */
+export function togglePause(sim) {
+  sim.paused = !sim.paused;
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// REGENERATE — reset the world with fresh stone zones
+// ═══════════════════════════════════════════════════════════════════════
+
+/**
+ * Regenerate the sim world: clear enemies/walls/turrets, rebuild grid,
+ * re-roll stone zones, reset wave and resource state to game start.
+ *
+ * Preserves base level, kills, debugLog, sound settings.
+ * @param {object} sim
+ */
+export function regenerateSim(sim) {
+  // Clear all dynamic entities
+  sim.enemies.length = 0;
+  sim.turrets.length = 0;
+  sim.walls.length = 0;
+  sim.bots.length = 0;
+
+  // Clear stone zones (they'll be re-generated)
+  sim.stoneZones.length = 0;
+
+  // Reset wave state
+  sim.wave = 0;
+  sim.waveState = 'cooldown';
+  sim.waveSpawnTimer = 0;
+  sim.waveCooldownTimer = WAVE.cooldownTicks;
+  sim.waveEnemiesToSpawn = 0;
+  sim.waveEnemiesSpawned = 0;
+  sim.waveEnemiesRemaining = 0;
+  sim.waveComposition = [];
+  sim.swarmActive = false;
+
+  // Reset day cycle
+  sim.dayPhase = DAY_CYCLE.startingPhase;
+  sim.dayTimer = 0;
+
+  // Reset base HP
+  sim.baseHp = BASE.hp;
+  sim.baseMaxHp = BASE.hp;
+  sim.baseLevel = 0;
+  sim.baseRadius = BASE.radius;
+  sim.shield.hp = 0;
+  sim.shield.maxHp = 0;
+  sim.shield.lastHitTick = 0;
+
+  // Reset resources
+  sim.resources = {
+    stone: RESOURCE.stone.starting,
+    crystal: RESOURCE.crystal.starting,
+    essence: RESOURCE.essence.starting,
+  };
+  sim.storageLevel = { stone: 0, crystal: 0, essence: 0 };
+  sim.resourceHUD = null;
+
+  // Reset abilities
+  sim._abilityCooldowns = {};
+  sim.lastPulseWaveTick = -9999;
+  sim.emergencyShield = null;
+  sim.finalDefense = null;
+
+  // Reset ID counters
+  sim._nextEnemyId = 1;
+  sim._nextTurretId = 1;
+  sim._nextWallId = 1;
+  sim._nextBotId = 1;
+
+  // Rebuild world and stone zones
+  genWorld(sim);
+  generateStoneZones(sim, Date.now(), Math.random);
+
+  // Create starting bot(s)
+  for (let i = 0; i < BOT.startingBots; i++) {
+    sim.bots.push(createBot(sim));
+  }
+
+  // Unpause if paused
+  sim.paused = false;
+
+  // Log
+  sim.debugLog.push({
+    msg: 'World regenerated',
+    tick: sim.tick,
+  });
 }
 
 // ═══════════════════════════════════════════════════════════════════════

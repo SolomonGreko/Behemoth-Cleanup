@@ -37,6 +37,8 @@ export {
   buyWatcher,
   buyWall,
   buyWallUpgrade,
+  togglePause,
+  regenerateSim,
   selectTurret,
   deselectTurret,
 } from './engine.js';

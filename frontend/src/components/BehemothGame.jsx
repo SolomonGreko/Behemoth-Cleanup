@@ -7,7 +7,7 @@
  * This is the top-level game UI: canvas zone + HUD overlay.
  */
 
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { ResourceHUD, BotLabourHUD } from './ResourceHUD.jsx';
 import {
   getWavePreview, DAY_CYCLE, LEVEL, RESOURCE, toggleSound,
@@ -15,7 +15,7 @@ import {
   drawCrystalDrops, drawBossShockwaves, drawTurrets, drawBots,
   drawWalls, drawDayNightOverlay, drawSelectionRing,
   findTurretAt, selectTurret, deselectTurret,
-  getTurretById,
+  getTurretById, buyBot, buyWatcher, buyWall, togglePause, regenerateSim,
 } from '../sim/index.js';
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -229,6 +229,13 @@ export function BehemothGame({ sim }) {
   // always reads the current tick / world dimensions.
   simRef.current = sim;
 
+  // ── Interaction state ───────────────────────────────────────────────
+  const [placementMode, setPlacementMode] = useState(null); // null | 'wall'
+  const placementModeRef = useRef(placementMode);
+  placementModeRef.current = placementMode;
+  const [showLegend, setShowLegend] = useState(false);
+  const [showEditor, setShowEditor] = useState(false);
+
   // ── Canvas render loop ───────────────────────────────────────────
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -239,6 +246,7 @@ export function BehemothGame({ sim }) {
     let running = true;
 
     // ── Click handler: screen → world coords → hit-test → select/deselect
+    // When in placement mode (wall), click places a wall instead.
     const handleClick = (e) => {
       const s = simRef.current;
       if (!s || !s.world) return;
@@ -251,11 +259,31 @@ export function BehemothGame({ sim }) {
       const worldX = screenX / scale;
       const worldY = screenY / scale;
 
+      // ── Placement mode: place wall at click position ──────────────
+      if (placementModeRef.current === 'wall') {
+        const result = buyWall(s, worldX, worldY);
+        if (result.success) {
+          // Exit placement mode on successful placement
+          // (use a timeout so the setState happens outside the event handler race)
+          setTimeout(() => setPlacementMode(null), 0);
+        }
+        return;
+      }
+
+      // ── Normal mode: select turret ────────────────────────────────
       const turret = findTurretAt(s, worldX, worldY);
       if (turret) {
         selectTurret(s, turret.id);
       } else {
         deselectTurret(s);
+      }
+    };
+
+    // ── Right-click handler: cancel placement mode ──────────────────
+    const handleContextMenu = (e) => {
+      e.preventDefault();
+      if (placementModeRef.current) {
+        setPlacementMode(null);
       }
     };
 
@@ -268,6 +296,7 @@ export function BehemothGame({ sim }) {
     };
 
     canvas.addEventListener('click', handleClick);
+    canvas.addEventListener('contextmenu', handleContextMenu);
     window.addEventListener('keydown', handleKeyDown);
 
     const render = () => {
@@ -310,6 +339,7 @@ export function BehemothGame({ sim }) {
       running = false;
       if (rafId) cancelAnimationFrame(rafId);
       canvas.removeEventListener('click', handleClick);
+      canvas.removeEventListener('contextmenu', handleContextMenu);
       window.removeEventListener('keydown', handleKeyDown);
     };
   }, []);
@@ -376,8 +406,22 @@ export function BehemothGame({ sim }) {
         {/* Base level badge — visually distinct per-level styling */}
         <BaseLevelBadge hud={sim.hud} />
 
+        {/* Base integrity — HP bar with colour-coded fill */}
+        <IntegrityBar hud={sim.hud} />
+
         {/* Sound mute/unmute toggle */}
         <SoundToggle sim={sim} />
+
+        {/* Game control buttons */}
+        <GameControls
+          sim={sim}
+          placementMode={placementMode}
+          onPlacementModeChange={setPlacementMode}
+          showLegend={showLegend}
+          onLegendToggle={() => setShowLegend((v) => !v)}
+          showEditor={showEditor}
+          onEditorToggle={() => setShowEditor((v) => !v)}
+        />
       </div>
     </div>
   );
@@ -686,6 +730,71 @@ function BaseLevelBadge({ hud }) {
           <span style={styles.baseLevelKills}>{kills} kills</span>
         </div>
       )}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// INTEGRITY BAR — base HP display
+// ═══════════════════════════════════════════════════════════════════════
+
+/**
+ * IntegrityBar — base HP bar with colour-coded fill.
+ *
+ * Reads sim.hud.baseHp / sim.hud.baseMaxHp from the engine HUD snapshot.
+ * Colour thresholds match the spec:
+ *   >60% HP → green (#22c55e)
+ *   30-60%  → amber (#f59e0b)
+ *   <30%    → red (#ef4444)
+ *
+ * Bar styling follows the WatcherCard hpRow pattern for visual consistency
+ * (track + fill + text overlay).
+ *
+ * @param {object} props
+ * @param {object} props.hud — sim.hud snapshot from engine buildHUD()
+ */
+function IntegrityBar({ hud }) {
+  if (!hud) return null;
+
+  const hp = hud.baseHp ?? 0;
+  const maxHp = hud.baseMaxHp ?? 0;
+  if (maxHp <= 0) return null;
+
+  const ratio = Math.min(1, Math.max(0, hp / maxHp));
+
+  // Colour: >60% green, 30-60% amber, <30% red
+  let color;
+  if (ratio > 0.6) {
+    color = '#22c55e';
+  } else if (ratio > 0.3) {
+    color = '#f59e0b';
+  } else {
+    color = '#ef4444';
+  }
+
+  return (
+    <div style={styles.integrityPanel} role="region" aria-label="Base Integrity">
+      {/* Header */}
+      <div style={styles.integrityHeader}>
+        <span style={styles.integrityTitle}>{'\u25c6'} INTEGRITY</span>
+      </div>
+
+      {/* HP bar row — matches WatcherCard hpRow pattern */}
+      <div style={styles.integrityHpRow}>
+        <div style={styles.integrityHpBarTrack}>
+          <div
+            style={{
+              ...styles.integrityHpBarFill,
+              width: `${ratio * 100}%`,
+              background: color,
+              boxShadow: `0 0 8px ${color}88`,
+            }}
+          />
+        </div>
+        <span style={styles.integrityHpText}>
+          {hp}/{maxHp}
+        </span>
+      </div>
     </div>
   );
 }
@@ -1071,8 +1180,207 @@ function GardenProgressIndicator({ sim }) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
-// STYLES
+// GAME CONTROLS — BUILD / PAUSE / LEGEND / REGENERATE / EDIT
 // ═══════════════════════════════════════════════════════════════════════
+
+/**
+ * GameControls — interactive button panel for player actions.
+ *
+ * Sections:
+ *   BUILD   — Bot (Stone), Watcher (Crystal), Wall (click-to-place)
+ *   PAUSE   — toggle sim.paused with ▶/⏸ icon
+ *   LEGEND  — show/hide enemy type key
+ *   REGENERATE — reset the world
+ *   EDIT    — toggle gameplay values editor
+ *   Hint    — placement controls text
+ *
+ * @param {object} props
+ * @param {object} props.sim — live sim state
+ * @param {string|null} props.placementMode — current placement mode
+ * @param {(mode: string|null) => void} props.onPlacementModeChange
+ * @param {boolean} props.showLegend
+ * @param {() => void} props.onLegendToggle
+ * @param {boolean} props.showEditor
+ * @param {() => void} props.onEditorToggle
+ */
+function GameControls({
+  sim,
+  placementMode,
+  onPlacementModeChange,
+  showLegend,
+  onLegendToggle,
+  showEditor,
+  onEditorToggle,
+}) {
+  const stone = sim.resources?.stone ?? 0;
+  const crystal = sim.resources?.crystal ?? 0;
+  const paused = sim.paused ?? false;
+
+  const handleBuyBot = useCallback(() => {
+    buyBot(sim);
+  }, [sim]);
+
+  const handleBuyWatcher = useCallback(() => {
+    buyWatcher(sim);
+  }, [sim]);
+
+  const handleBuyWall = useCallback(() => {
+    // Toggle wall placement mode
+    if (placementMode === 'wall') {
+      onPlacementModeChange(null);
+    } else {
+      onPlacementModeChange('wall');
+    }
+  }, [placementMode, onPlacementModeChange]);
+
+  const handlePause = useCallback(() => {
+    togglePause(sim);
+  }, [sim]);
+
+  const handleRegenerate = useCallback(() => {
+    regenerateSim(sim);
+  }, [sim]);
+
+  // ── Affordability checks ──────────────────────────────────────────
+  const botCost = (sim.purchasableItems || []).find((i) => i.id === 'buyBot')?.cost?.stone ?? 15;
+  const watcherCost = (sim.purchasableItems || []).find((i) => i.id === 'buyWatcher')?.cost?.crystal ?? 5;
+  const canBuyBot = stone >= botCost && (sim.bots?.length ?? 0) < 12;
+  const canBuyWatcher = crystal >= watcherCost;
+
+  return (
+    <div style={styles.controlsPanel} role="region" aria-label="Game Controls">
+      {/* ── BUILD section ──────────────────────────────────────────── */}
+      <div style={styles.controlsSectionLabel}>BUILD</div>
+      <div style={styles.controlsRow}>
+        <button
+          onClick={handleBuyBot}
+          disabled={!canBuyBot}
+          style={{
+            ...styles.controlBtn,
+            ...(canBuyBot ? {} : styles.controlBtnDisabled),
+            borderColor: 'rgba(34, 197, 94, 0.30)',
+          }}
+          title={`Buy Bot (${botCost} Stone)`}
+          aria-label={`Buy Bot — costs ${botCost} Stone`}
+        >
+          <span style={styles.controlBtnIcon}>{'\u2699'}</span>
+          <span style={styles.controlBtnLabel}>Bot</span>
+          <span style={styles.controlBtnCost}>{botCost}S</span>
+        </button>
+
+        <button
+          onClick={handleBuyWatcher}
+          disabled={!canBuyWatcher}
+          style={{
+            ...styles.controlBtn,
+            ...(canBuyWatcher ? {} : styles.controlBtnDisabled),
+            borderColor: 'rgba(56, 189, 248, 0.30)',
+          }}
+          title={`Buy Watcher (${watcherCost} Crystal)`}
+          aria-label={`Buy Watcher — costs ${watcherCost} Crystal`}
+        >
+          <span style={styles.controlBtnIcon}>{'\u25c6'}</span>
+          <span style={styles.controlBtnLabel}>Watcher</span>
+          <span style={styles.controlBtnCost}>{watcherCost}C</span>
+        </button>
+
+        <button
+          onClick={handleBuyWall}
+          style={{
+            ...styles.controlBtn,
+            ...(placementMode === 'wall' ? styles.controlBtnActive : {}),
+            borderColor: placementMode === 'wall'
+              ? 'rgba(168, 85, 247, 0.70)'
+              : 'rgba(168, 85, 247, 0.30)',
+          }}
+          title={placementMode === 'wall' ? 'Cancel wall placement' : 'Place Wall — click on map'}
+          aria-label={placementMode === 'wall' ? 'Cancel wall placement' : 'Place Wall'}
+        >
+          <span style={styles.controlBtnIcon}>{'\u25a0'}</span>
+          <span style={styles.controlBtnLabel}>Wall</span>
+          <span style={styles.controlBtnCost}>free</span>
+        </button>
+      </div>
+
+      {/* ── PAUSE / LEGEND row ─────────────────────────────────────── */}
+      <div style={styles.controlsRow}>
+        <button
+          onClick={handlePause}
+          style={styles.controlBtnSmall}
+          title={paused ? 'Resume' : 'Pause'}
+          aria-label={paused ? 'Resume game' : 'Pause game'}
+        >
+          <span style={styles.controlBtnIcon}>
+            {paused ? '\u25b6' : '\u23f8'}
+          </span>
+          <span style={styles.controlBtnLabel}>
+            {paused ? 'PLAY' : 'PAUSE'}
+          </span>
+        </button>
+
+        <button
+          onClick={onLegendToggle}
+          style={{
+            ...styles.controlBtnSmall,
+            ...(showLegend ? styles.controlBtnActive : {}),
+          }}
+          title="Toggle enemy legend"
+          aria-label="Toggle enemy type legend"
+        >
+          <span style={styles.controlBtnIcon}>{'\u2139'}</span>
+          <span style={styles.controlBtnLabel}>LEGEND</span>
+        </button>
+      </div>
+
+      {/* ── REGENERATE / EDIT row ──────────────────────────────────── */}
+      <div style={styles.controlsRow}>
+        <button
+          onClick={handleRegenerate}
+          style={styles.controlBtnSmall}
+          title="Regenerate world"
+          aria-label="Regenerate the game world"
+        >
+          <span style={styles.controlBtnIcon}>{'\u21bb'}</span>
+          <span style={styles.controlBtnLabel}>REGEN</span>
+        </button>
+
+        <button
+          onClick={onEditorToggle}
+          style={{
+            ...styles.controlBtnSmall,
+            ...(showEditor ? styles.controlBtnActive : {}),
+          }}
+          title="Edit gameplay values"
+          aria-label="Toggle gameplay values editor"
+        >
+          <span style={styles.controlBtnIcon}>{'\u2699'}</span>
+          <span style={styles.controlBtnLabel}>EDIT</span>
+        </button>
+      </div>
+
+      {/* ── Controls hint ──────────────────────────────────────────── */}
+      <div style={styles.controlsHint}>
+        {placementMode === 'wall'
+          ? '\u25a0 Click to place \u2022 Right-click to cancel'
+          : 'Click to select \u2022 \u23f8 Pause to build'}
+      </div>
+
+      {/* ── Enemy type legend (togglable) ──────────────────────────── */}
+      {showLegend && (
+        <div style={styles.legendOverlay}>
+          {Object.entries(ENEMY_TYPE_STYLE).map(([type, style]) => (
+            <div key={type} style={styles.legendRow}>
+              <span style={{ ...styles.legendIcon, color: style.color }}>
+                {style.icon}
+              </span>
+              <span style={styles.legendLabel}>{style.label}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 const styles = {
   gameContainer: {
@@ -1762,6 +2070,199 @@ const styles = {
     textAlign: 'center',
     fontStyle: 'italic',
     paddingTop: '2px',
+  },
+
+  // ── Game Controls Panel ──────────────────────────────────────────
+
+  controlsPanel: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '6px',
+    padding: '8px 10px',
+    background: 'rgba(9, 9, 11, 0.88)',   // zinc-950
+    borderRadius: '8px',
+    border: '1px solid rgba(255, 255, 255, 0.08)',
+    fontFamily: "'Courier New', monospace",
+    userSelect: 'none',
+    minWidth: '200px',
+  },
+
+  controlsSectionLabel: {
+    fontSize: '10px',
+    color: '#34d399',            // emerald-400
+    letterSpacing: '3px',
+    textTransform: 'uppercase',
+    fontWeight: 'bold',
+    textAlign: 'center',
+    paddingBottom: '4px',
+    borderBottom: '1px solid rgba(52, 211, 153, 0.15)',
+  },
+
+  controlsRow: {
+    display: 'flex',
+    gap: '4px',
+  },
+
+  controlBtn: {
+    flex: 1,
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    gap: '1px',
+    padding: '5px 4px 4px',
+    background: 'rgba(255, 255, 255, 0.04)',
+    border: '1px solid rgba(255, 255, 255, 0.1)',
+    borderRadius: '6px',
+    cursor: 'pointer',
+    fontFamily: "'Courier New', monospace",
+    fontSize: '10px',
+    color: '#d4d4d8',           // zinc-300
+    transition: 'background 0.15s, border-color 0.15s, color 0.15s',
+    outline: 'none',
+  },
+
+  controlBtnSmall: {
+    flex: 1,
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    gap: '1px',
+    padding: '4px 4px 3px',
+    background: 'rgba(255, 255, 255, 0.04)',
+    border: '1px solid rgba(255, 255, 255, 0.08)',
+    borderRadius: '6px',
+    cursor: 'pointer',
+    fontFamily: "'Courier New', monospace",
+    fontSize: '10px',
+    color: '#a1a1aa',           // zinc-400
+    transition: 'background 0.15s, border-color 0.15s, color 0.15s',
+    outline: 'none',
+  },
+
+  controlBtnActive: {
+    background: 'rgba(52, 211, 153, 0.12)',
+    borderColor: 'rgba(52, 211, 153, 0.40)',
+    color: '#34d399',
+  },
+
+  controlBtnDisabled: {
+    opacity: 0.35,
+    cursor: 'not-allowed',
+    pointerEvents: 'none',
+  },
+
+  controlBtnIcon: {
+    fontSize: '14px',
+    lineHeight: 1,
+  },
+
+  controlBtnLabel: {
+    fontSize: '9px',
+    fontWeight: 'bold',
+    letterSpacing: '1px',
+    textTransform: 'uppercase',
+    color: 'inherit',
+  },
+
+  controlBtnCost: {
+    fontSize: '8px',
+    color: '#71717a',           // zinc-500
+    letterSpacing: '0.5px',
+  },
+
+  controlsHint: {
+    fontSize: '8px',
+    color: '#52525b',           // zinc-600
+    textAlign: 'center',
+    fontStyle: 'italic',
+    paddingTop: '2px',
+    borderTop: '1px solid rgba(255, 255, 255, 0.04)',
+  },
+
+  legendOverlay: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '3px',
+    padding: '6px 8px',
+    background: 'rgba(0, 0, 0, 0.6)',
+    borderRadius: '5px',
+    border: '1px solid rgba(255, 255, 255, 0.06)',
+    marginTop: '2px',
+  },
+
+  legendRow: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '6px',
+  },
+
+  legendIcon: {
+    fontSize: '12px',
+    width: '16px',
+    textAlign: 'center',
+  },
+
+  legendLabel: {
+    fontSize: '10px',
+    color: '#a1a1aa',
+  },
+
+  // ── Integrity Bar ─────────────────────────────────────────────────
+
+  integrityPanel: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '5px',
+    padding: '8px 12px',
+    background: 'rgba(0, 0, 0, 0.75)',
+    borderRadius: '8px',
+    border: '1px solid rgba(255, 255, 255, 0.1)',
+    fontFamily: "'Courier New', monospace",
+    userSelect: 'none',
+    minWidth: '180px',
+  },
+
+  integrityHeader: {
+    paddingBottom: '4px',
+    borderBottom: '1px solid rgba(255, 255, 255, 0.06)',
+  },
+
+  integrityTitle: {
+    fontSize: '11px',
+    color: '#a1a1aa',
+    letterSpacing: '3px',
+    textTransform: 'uppercase',
+    fontWeight: 'bold',
+  },
+
+  integrityHpRow: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+  },
+
+  integrityHpBarTrack: {
+    flex: 1,
+    height: '6px',
+    background: 'rgba(255, 255, 255, 0.08)',
+    borderRadius: '3px',
+    overflow: 'hidden',
+  },
+
+  integrityHpBarFill: {
+    height: '100%',
+    borderRadius: '3px',
+    transition: 'width 0.3s ease, background 0.3s ease',
+  },
+
+  integrityHpText: {
+    fontSize: '11px',
+    color: '#e4e4e7',
+    fontWeight: 'bold',
+    fontVariantNumeric: 'tabular-nums',
+    flexShrink: 0,
+    minWidth: '60px',
+    textAlign: 'right',
   },
 };
 

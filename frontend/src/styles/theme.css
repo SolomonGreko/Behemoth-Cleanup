@@ -1,0 +1,152 @@
+/**
+ * theme.css — Behemoth visual design system (Aphrodite)
+ *
+ * Implements the full VISUAL_SPEC.md palette, typography, and spacing
+ * as CSS custom properties. All UI chrome lives within the dark zinc
+ * scale; the game canvas renders at #0a0c10.
+ *
+ * Domain: Aphrodite — Visual Design
+ * Reference: docs/VISUAL_SPEC.md v1.0
+ */
+
+:root {
+  /* ═══════════════════════════════════════════════════════════════════
+     PRIMARY PALETTE — UI Chrome (monochromatic zinc scale)
+     ═══════════════════════════════════════════════════════════════════ */
+  --bg-deep: #09090b;
+  --bg-surface: #18181b;
+  --bg-elevated: #1c1c1f;
+  --border-default: #27272a;
+  --border-subtle: #1f1f23;
+  --text-bright: #f4f4f5;
+  --text-body: #a1a1aa;
+  --text-dim: #71717a;
+  --text-faint: #52525b;
+
+  /* ═══════════════════════════════════════════════════════════════════
+     ACCENT PALETTE — Semantic meaning colours
+     ═══════════════════════════════════════════════════════════════════ */
+  --accent-primary: #fbbf24;       /* amber-400 — attention, action */
+  --accent-success: #34d399;       /* emerald-400 — health, growth */
+  --accent-danger: #fb7185;        /* rose-400 — damage, threat */
+  --accent-info: #38bdf8;          /* sky-400 — status, neutral */
+  --accent-magic: #c084fc;         /* violet-400 — special, rare */
+
+  /* Accent variants: hover (lighter) + muted (dark background) */
+  --accent-primary-hover: #fcd34d;
+  --accent-primary-muted: #78350f;
+  --accent-success-hover: #6ee7b7;
+  --accent-success-muted: #064e3b;
+  --accent-danger-hover: #fda4af;
+  --accent-danger-muted: #881337;
+  --accent-info-hover: #7dd3fc;
+  --accent-info-muted: #0c4a6e;
+  --accent-magic-hover: #d8b4fe;
+  --accent-magic-muted: #4c1d95;
+
+  /* ═══════════════════════════════════════════════════════════════════
+     ENTITY PALETTE — Game-world entity colours
+     ═══════════════════════════════════════════════════════════════════ */
+  --entity-base: #2d6b3f;
+  --entity-watcher: #3ea35a;
+  --entity-bot: #4ea0c9;
+  --entity-enemy: #d65a4e;
+  --entity-scout: #e2a83e;
+  --entity-bunny: #f9a8d4;
+  --entity-fox: #f97316;
+  --entity-deer: #a78b6a;
+  --entity-hedgehog: #78716c;
+  --entity-owl: #94a3b8;
+  --entity-squirrel: #ca8a04;
+  --entity-wall: #78716c;
+  --entity-root: #6b7280;
+  --entity-car: #64748b;
+  --entity-steel: #fbbf24;
+  --entity-grass: #14532d;
+  --entity-moss: #1a3a1a;
+  --entity-dirt: #2a1f14;
+
+  /* ═══════════════════════════════════════════════════════════════════
+     CAPTAIN'S ROOM — CRT terminal green-on-black
+     ═══════════════════════════════════════════════════════════════════ */
+  --crt-bg: #000000;
+  --crt-text-bright: #4ade80;
+  --crt-text-body: #22c55e;
+  --crt-text-dim: #166534;
+  --crt-border: #166534;
+  --crt-hover-text: #86efac;
+  --crt-hover-bg: #052e16;
+  --crt-selected-bg: #052e16;
+
+  /* ═══════════════════════════════════════════════════════════════════
+     TYPOGRAPHY
+     ═══════════════════════════════════════════════════════════════════ */
+  --font-mono: "Fira Code", "Cascadia Code", ui-monospace, monospace;
+  --font-size-hero: 15px;
+  --font-size-section: 10px;
+  --font-size-body: 11px;
+  --font-size-fine: 9px;
+  --font-size-button: 12px;
+  --font-size-dev: 10.5px;
+  --font-size-big-stat: 20px;
+  --font-size-code: 13px;
+  --tracking-hero: 0.3em;
+  --tracking-section: 0.1em;
+  --tracking-button: 0.05em;
+
+  /* ═══════════════════════════════════════════════════════════════════
+     SPACING — 4px base unit
+     ═══════════════════════════════════════════════════════════════════ */
+  --space-xs: 4px;
+  --space-sm: 8px;
+  --space-md: 12px;
+  --space-lg: 16px;
+  --space-xl: 20px;
+  --space-2xl: 24px;
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-full: 9999px;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   BASE — full-viewport dark foundation
+   ═══════════════════════════════════════════════════════════════════════ */
+html, body, #root {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: var(--bg-deep);
+  color: var(--text-body);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-body);
+  font-variant-numeric: tabular-nums;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   SCROLLBAR — dark, minimal, zinc-toned
+   ═══════════════════════════════════════════════════════════════════════ */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: var(--bg-deep);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border-default);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-faint);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   SELECTION — toned-down zinc (no bright blue browser default)
+   ═══════════════════════════════════════════════════════════════════════ */
+::selection {
+  background: rgba(251, 191, 36, 0.25);
+  color: var(--text-bright);
+}
