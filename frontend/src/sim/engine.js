@@ -153,10 +153,7 @@ export function applyStorageUpgrade(sim, resourceType, level) {
   if (!upgrades || !upgrades[level]) return;
 
   sim.resourceCaps[resourceType] =
-    (resourceType === 'stone' ? RESOURCE.stone.cap :
-     resourceType === 'crystal' ? RESOURCE.crystal.cap :
-     RESOURCE.essence.cap) +
-    RESOURCE[resourceType].capUpgradePerLevel * level;
+    RESOURCE[resourceType].capUpgradePerLevel[level];
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -219,6 +216,9 @@ export function createSim(options = {}) {
 
     gameOver: false,
     soundEnabled: true,
+
+    // Selection state — set by click-to-select on turrets
+    selectedEntityId: null,
 
     // Scoped mutable state (prevents cross-instance corruption on hot-reload)
     _nextEnemyId: 1,
@@ -908,6 +908,7 @@ function buildHUD(sim) {
     gameOver: sim.gameOver,
     soundEnabled: sim.soundEnabled,
     resources: sim.resourceHUD?.resources || null,
+    selectedEntityId: sim.selectedEntityId,
   };
 }
 
@@ -1043,4 +1044,32 @@ export function buyWallUpgrade(sim, wallId) {
   }
 
   return { success: true, wallId: wall.id };
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// SELECTION — click-to-select for turret inspect panel
+// ═══════════════════════════════════════════════════════════════════════
+
+/**
+ * Set the selected entity (turret) for the inspect panel.
+ *
+ * @param {object} sim
+ * @param {number} turretId — the turret to select
+ * @returns {object|null} the selected turret, or null if not found
+ */
+export function selectTurret(sim, turretId) {
+  const turret = sim.turrets.find((t) => t.id === turretId && t.alive);
+  if (!turret) return null;
+
+  sim.selectedEntityId = turretId;
+  return turret;
+}
+
+/**
+ * Clear the current selection.
+ *
+ * @param {object} sim
+ */
+export function deselectTurret(sim) {
+  sim.selectedEntityId = null;
 }

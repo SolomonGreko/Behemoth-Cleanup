@@ -22,7 +22,11 @@ export const RESOURCE = {
   stone: {
     starting: 20,
     cap: 200,                     // default storage cap
-    capUpgradePerLevel: 50,       // cap increase per storage upgrade level
+    capUpgradePerLevel: [200, 250, 300, 400],
+    // Per-level cumulative cap. Index = storage upgrade level.
+    // L0=200 (default), L1=250 (+50), L2=300 (+50), L3=400 (+100).
+    // L3 escalates: the most expensive upgrade (120 Stone + 20 Crystal)
+    // should deliver proportionally more capacity.
     harvestTicks: 120,            // ticks per harvest cycle (2s at 60fps)
     harvestAmount: 1,             // Stone per completed harvest cycle
     harvestRange: 2.0,            // cells — bot must be this close to zone
@@ -38,7 +42,9 @@ export const RESOURCE = {
   crystal: {
     starting: 0,
     cap: 50,                      // default storage cap
-    capUpgradePerLevel: 25,
+    capUpgradePerLevel: [50, 75, 100, 150],
+    // Per-level cumulative cap. L0=50, L1=75 (+25), L2=100 (+25), L3=150 (+50).
+    // L3 escalates: 180 Stone + 35 Crystal investment deserves +50 capacity.
     dropAmount: 1,                // Crystal per successful standard drop
     bossDropAmount: 3,            // Crystal per boss kill
     drop: {
@@ -54,7 +60,9 @@ export const RESOURCE = {
   essence: {
     starting: 0,
     cap: 100,                     // default storage cap
-    capUpgradePerLevel: 25,
+    capUpgradePerLevel: [100, 125, 150, 200],
+    // Per-level cumulative cap. L0=100, L1=125 (+25), L2=150 (+25), L3=200 (+50).
+    // L3 escalates: 220 Stone + 50 Crystal investment deserves +50 capacity.
     perTick: 1 / 600,             // fractional — 1 per 600 ticks (10s at 60fps)
     // Accumulation pauses during cinematic freeze (FD sequence, cutscenes).
   },
@@ -117,15 +125,16 @@ export const ECON = {
  * BOT — worker bot intrinsics.
  *
  * Worker bots (Chime-Forged) harvest Stone from terrain zones. They move
- * at moderate speed (half of scout), carry one Stone per cycle, and
- * retreat rather than fight. Max count prevents bot-spam economy.
+ * at moderate speed (75% of scout — slower than threats), carry one Stone
+ * per cycle, and retreat rather than fight. Max count prevents bot-spam
+ * economy. Bots cannot outrun scouts; the player must defend their workers.
  *
  * Default values produce day-one gameplay: one starting bot yields ~1
  * Stone every ~3 seconds accounting for round-trip travel time to the
  * nearest zone cluster.
  */
 export const BOT = {
-  speed: 0.025,          // cells per tick (scouts are 0.02, so bots are slightly faster)
+  speed: 0.015,          // cells per tick (75% of scout 0.02 — slower = must defend bots)
   size: 0.6,             // cell radius for rendering
   maxBots: 12,           // hard cap — prevents bot-spam economy
   startingBots: 1,       // free bot at game start

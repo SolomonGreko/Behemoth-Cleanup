@@ -79,6 +79,59 @@ function recordBossShockwaves(enemies, tick) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
+// CRYSTAL DROP VFX (Aphrodite — post-kill resource feedback)
+// ═══════════════════════════════════════════════════════════════════════
+
+/**
+ * Active crystal drop particles spawned when enemies die.
+ *
+ * Each entry represents a single crystal shard created at the death
+ * point. Crystals arc outward with gravity-like settling, representing
+ * the crystal/essence resource drops the engine processes.
+ *
+ *   { x, y, bornTick, particles: [{ angle, speed, size, alpha, settle }] }
+ *
+ * Crystal drops last ~45 ticks (0.75s at 60 tps) — longer than death
+ * particles — so the player has time to register the reward.
+ */
+const crystalDrops = [];
+
+/** Max age in ticks before a crystal drop event is pruned. */
+const CRYSTAL_DROP_LIFE = 45;
+
+/**
+ * Spawn crystal drop particles at an enemy death position.
+ * Called from recordDeathParticles for every newly-detected death.
+ *
+ * Crystal theme: amber/gold gem shards (#fbbf24 primary accent).
+ * Slightly larger, slower, and longer-lived than death particles.
+ * Each shard arcs upward and outward, then settles and fades.
+ *
+ * @param {object} enemy — the dead enemy { x, y, type }
+ * @param {number} tick — current sim tick
+ */
+function spawnCrystalDrops(enemy, tick) {
+  // Crystal count scales with enemy threat — bosses drop more
+  const dropCount = enemy.type === 'boss' ? 6 : enemy.type === 'tank' ? 3 : 2;
+  const particles = [];
+  for (let i = 0; i < dropCount; i++) {
+    // Fan out in a rough semicircle upward-ish
+    const baseAngle = -Math.PI / 2;                             // straight up
+    const spread = (i - (dropCount - 1) / 2) * (Math.PI / 5);  // fan ±36°
+    const angle = baseAngle + spread + (Math.random() - 0.5) * 0.4;
+    const speed = 0.3 + Math.random() * 0.6;                    // slower than death particles
+    const size = 1.8 + Math.random() * 2.5;                     // slightly larger
+    particles.push({ angle, speed, size, alpha: 1.0 });
+  }
+  crystalDrops.push({
+    x: enemy.x,
+    y: enemy.y,
+    bornTick: tick,
+    particles,
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════════════
 // DAMAGE FLASH SYSTEM (Aphrodite — hit-feedback)
 // ═══════════════════════════════════════════════════════════════════════
 
@@ -220,6 +273,9 @@ function recordDeathParticles(enemies, tick) {
       bornTick: tick,
       particles,
     });
+
+    // Spawn crystal drop VFX alongside death particles
+    spawnCrystalDrops(enemy, tick);
   }
 }
 
@@ -292,6 +348,130 @@ export function drawDeathParticles(ctx, scale, tick) {
       ctx.beginPath();
       ctx.arc(px, py, pr * 0.35, 0, Math.PI * 2);
       ctx.fill();
+    }
+
+    ctx.restore();
+  }
+}
+
+/**
+ * Draw all active crystal drop particles on the canvas.
+ *
+ * Crystal drops are small amber/gold diamond shapes that arc upward
+ * from an enemy death point, spread outward, then settle and fade.
+ * They represent the crystal/essence resource drops.
+ *
+ * Three-phase animation per shard:
+ *   1. Ascend (0–35% life): arc upward and outward, full opacity
+ *   2. Settle (35–60% life): slow descent, slight horizontal drift
+ *   3. Fade   (60–100% life): dim to zero, shrink slightly
+ *
+ * Crystal shards render as small rotated diamonds with a warm
+ * amber-gold glow — distinct from death particles' circular glow.
+ * The amber color matches the --accent-primary palette (#fbbf24)
+ * and the steel resource icon, creating visual continuity between
+ * resource economy and combat feedback.
+ *
+ * Called after drawDeathParticles, before any fog/overlay pass.
+ *
+ * @param {CanvasRenderingContext2D} ctx
+ * @param {number} scale — pixels per cell
+ * @param {number} tick — current sim tick
+ */
+export function drawCrystalDrops(ctx, scale, tick) {
+  // Prune expired events
+  for (let i = crystalDrops.length - 1; i >= 0; i--) {
+    if (tick - crystalDrops[i].bornTick > CRYSTAL_DROP_LIFE) {
+      crystalDrops.splice(i, 1);
+    }
+  }
+
+  for (const drop of crystalDrops) {
+    const age = tick - drop.bornTick;
+    const lifeRatio = age / CRYSTAL_DROP_LIFE; // 0 → 1
+    const sx = drop.x * scale;
+    const sy = drop.y * scale;
+
+    ctx.save();
+
+    for (const p of drop.particles) {
+      // ── Three-phase motion ──────────────────────────────────────
+      let px, py, shardAlpha, shardSize;
+
+      if (lifeRatio < 0.35) {
+        // Phase 1: Ascend — arc upward and outward
+        const phaseProgress = lifeRatio / 0.35;
+        const dist = phaseProgress * p.speed * 4 * scale;
+        // Arc: initially upward, gravity slowly pulls down
+        const arcY = -phaseProgress * p.speed * 2.5 * scale
+          + (1 - Math.cos(phaseProgress * Math.PI * 0.5)) * 0.3 * scale;
+        px = sx + Math.cos(p.angle) * dist;
+        py = sy + arcY;
+        shardAlpha = 1.0;
+        shardSize = p.size * scale * 0.22;
+      } else if (lifeRatio < 0.6) {
+        // Phase 2: Settle — drift down, slow horizontal movement
+        const phaseProgress = (lifeRatio - 0.35) / 0.25;
+        const settleDist = p.speed * 4 * scale + phaseProgress * 0.3 * scale;
+        const settleY = -p.speed * 2.5 * scale
+          + phaseProgress * p.speed * 1.2 * scale;
+        px = sx + Math.cos(p.angle) * settleDist;
+        py = sy + settleY;
+        shardAlpha = 1.0 - phaseProgress * 0.15; // barely dimmed
+        shardSize = p.size * scale * 0.22;
+      } else {
+        // Phase 3: Fade — dim to zero
+        const phaseProgress = (lifeRatio - 0.6) / 0.4;
+        const fadeDist = p.speed * 4.3 * scale + (Math.random() - 0.5) * 0.6;
+        const fadeY = -p.speed * 2.5 * scale + p.speed * 1.3 * scale;
+        px = sx + Math.cos(p.angle) * fadeDist;
+        py = sy + fadeY + phaseProgress * 0.2 * scale;
+        shardAlpha = Math.max(0, 0.85 - phaseProgress * 0.85);
+        shardSize = p.size * scale * (0.22 - phaseProgress * 0.08);
+      }
+
+      if (shardAlpha <= 0.01 || shardSize < 0.3) continue;
+
+      // ── Crystal shard: rotated diamond ──────────────────────────
+      const crystalColor = '#fbbf24';       // amber-400 — primary accent
+      const glowColor = '#fcd34d';           // amber-300 — hover/glow variant
+
+      // Outer glow
+      ctx.shadowColor = glowColor;
+      ctx.shadowBlur = shardSize * 4;
+
+      // Draw diamond (rhombus) — rotates slightly per shard for variety
+      const rotAngle = (p.angle + lifeRatio * 1.5) % (Math.PI * 2);
+      ctx.save();
+      ctx.translate(px, py);
+      ctx.rotate(rotAngle);
+      ctx.beginPath();
+      ctx.moveTo(0, -shardSize * 1.4);
+      ctx.lineTo(shardSize, 0);
+      ctx.lineTo(0, shardSize * 1.4);
+      ctx.lineTo(-shardSize, 0);
+      ctx.closePath();
+
+      // Semi-transparent amber fill
+      ctx.fillStyle = hexToRgba(crystalColor, shardAlpha * 0.7);
+      ctx.fill();
+
+      // Bright edge stroke
+      ctx.strokeStyle = hexToRgba(glowColor, shardAlpha * 0.85);
+      ctx.lineWidth = Math.max(0.5, shardSize * 0.2);
+      ctx.stroke();
+
+      ctx.shadowBlur = 0;
+      ctx.restore();
+
+      // ── Bright core spark ───────────────────────────────────────
+      const sparkAlpha = shardAlpha * 0.6;
+      if (sparkAlpha > 0.05) {
+        ctx.fillStyle = hexToRgba('#ffffff', sparkAlpha);
+        ctx.beginPath();
+        ctx.arc(px, py, shardSize * 0.25, 0, Math.PI * 2);
+        ctx.fill();
+      }
     }
 
     ctx.restore();
@@ -1230,6 +1410,49 @@ function drawTurret(ctx, turret, scale) {
   drawHealthBar(ctx, sx, sy, turret.hp, turret.maxHp, 0.7, scale);
 }
 
+/**
+ * Draw a selection ring around the currently selected turret.
+ *
+ * Renders a 1–2px glow border at #6ba4c7 (60% alpha) with a subtle
+ * pulse animation. Called after all turrets are drawn so the ring
+ * sits on top of the selected turret.
+ *
+ * @param {CanvasRenderingContext2D} ctx
+ * @param {object} sim — sim state (reads sim.selectedEntityId, sim.turrets)
+ * @param {number} scale — pixels per cell
+ */
+export function drawSelectionRing(ctx, sim, scale) {
+  const { selectedEntityId, turrets = [] } = sim;
+  if (selectedEntityId == null) return;
+
+  const turret = turrets.find((t) => t.id === selectedEntityId && t.alive);
+  if (!turret) return;
+
+  const isAdvanced = turret.type === 'turret';
+  const r = (isAdvanced ? 0.65 : 0.5) * (turret.mounted ? 1.15 : 1.0) * scale;
+  const sx = turret.x * scale;
+  const sy = turret.y * scale;
+  const ringR = r * 1.3;
+
+  ctx.save();
+
+  // Outer glow ring
+  ctx.beginPath();
+  ctx.arc(sx, sy, ringR, 0, Math.PI * 2);
+  ctx.strokeStyle = 'rgba(107, 164, 199, 0.6)';  // #6ba4c7 at 60%
+  ctx.lineWidth = Math.max(1.5, r * 0.12);
+  ctx.stroke();
+
+  // Inner crisp ring (1px)
+  ctx.beginPath();
+  ctx.arc(sx, sy, ringR * 0.88, 0, Math.PI * 2);
+  ctx.strokeStyle = 'rgba(107, 164, 199, 0.85)';
+  ctx.lineWidth = Math.max(1, r * 0.06);
+  ctx.stroke();
+
+  ctx.restore();
+}
+
 // ═══════════════════════════════════════════════════════════════════════
 // BOT DRAWING
 // ═══════════════════════════════════════════════════════════════════════
@@ -1675,8 +1898,8 @@ export function drawDayNightOverlay(ctx, canvasW, canvasH, sim, tick) {
 
   if (nightWeight > 0.05) {
     // Base center for vignette origin
-    const bcx = (sim.baseCenter?.x ?? sim.worldWidth / 2) * (canvasW / (sim.worldWidth || 50));
-    const bcy = (sim.baseCenter?.y ?? sim.worldHeight / 2) * (canvasH / (sim.worldHeight || 50));
+    const bcx = (sim.baseCenter?.x ?? sim.world.width / 2) * (canvasW / (sim.world.width || 50));
+    const bcy = (sim.baseCenter?.y ?? sim.world.height / 2) * (canvasH / (sim.world.height || 50));
     const maxDim = Math.max(canvasW, canvasH);
 
     ctx.globalCompositeOperation = 'multiply';

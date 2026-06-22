@@ -174,10 +174,10 @@ describe('engine — storage upgrades', () => {
     expect(sim.resourceCaps.stone).toBe(250); // 200 + 50
   });
 
-  it('applies level 3 stone cap upgrade (200 → 350)', () => {
+  it('applies level 3 stone cap upgrade (200 → 400)', () => {
     const sim = createSim();
     applyStorageUpgrade(sim, 'stone', 3);
-    expect(sim.resourceCaps.stone).toBe(350); // 200 + 150
+    expect(sim.resourceCaps.stone).toBe(400); // array[3] = 400 (was 350 under scalar model)
   });
 
   it('applies level 1 crystal cap upgrade (50 → 75)', () => {
@@ -189,7 +189,19 @@ describe('engine — storage upgrades', () => {
   it('applies level 2 essence cap upgrade (100 → 150)', () => {
     const sim = createSim();
     applyStorageUpgrade(sim, 'essence', 2);
-    expect(sim.resourceCaps.essence).toBe(150); // 100 + 50
+    expect(sim.resourceCaps.essence).toBe(150); // array[2] = 150
+  });
+
+  it('applies level 3 crystal cap upgrade (50 → 150)', () => {
+    const sim = createSim();
+    applyStorageUpgrade(sim, 'crystal', 3);
+    expect(sim.resourceCaps.crystal).toBe(150); // array[3] = 150
+  });
+
+  it('applies level 3 essence cap upgrade (100 → 200)', () => {
+    const sim = createSim();
+    applyStorageUpgrade(sim, 'essence', 3);
+    expect(sim.resourceCaps.essence).toBe(200); // array[3] = 200
   });
 });
 

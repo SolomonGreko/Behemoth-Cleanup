@@ -37,6 +37,8 @@ export {
   buyWatcher,
   buyWall,
   buyWallUpgrade,
+  selectTurret,
+  deselectTurret,
 } from './engine.js';
 
 // Bot integration
@@ -94,6 +96,7 @@ export {
   tickTurrets,
   getTurretSummary,
   getTurretById,
+  findTurretAt,
 } from './turrets.js';
 
 // Wall system
@@ -123,9 +126,11 @@ export {
   drawBase,
   drawEnemies,
   drawDeathParticles,
+  drawCrystalDrops,
   drawBossShockwaves,
   drawTurrets,
   drawBots,
   drawWalls,
   drawDayNightOverlay,
+  drawSelectionRing,
 } from './render.js';

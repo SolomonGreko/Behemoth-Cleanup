@@ -15,6 +15,7 @@ import {
   mountOnWall,
   getTurretSummary,
   getTurretById,
+  findTurretAt,
 } from '../turrets.js';
 import {
   createSim,
@@ -516,5 +517,129 @@ describe('turrets — engine integration', () => {
 
     const stats = getStats(sim);
     expect(stats.turretCount).toBe(1);
+  });
+
+  it('getStats surfaces selectedEntityId', () => {
+    const sim = sim10x10();
+    sim.resources.crystal = 100;
+    buyWatcher(sim);
+    stepTick(sim);
+
+    // No selection yet
+    let stats = getStats(sim);
+    expect(stats.selectedEntityId).toBeNull();
+
+    // Select a turret
+    const turretId = sim.turrets[0].id;
+    selectTurret(sim, turretId);
+    stepTick(sim);
+    stats = getStats(sim);
+    expect(stats.selectedEntityId).toBe(turretId);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════
+// findTurretAt — click hit-test
+// ═══════════════════════════════════════════════════════════════════════
+
+describe('turrets — findTurretAt', () => {
+  it('returns null when no turrets exist', () => {
+    const sim = sim10x10();
+    expect(findTurretAt(sim, 5, 5)).toBeNull();
+  });
+
+  it('returns turret at exact position', () => {
+    const sim = sim10x10();
+    const w = createWatcher(sim, 5, 5);
+    expect(findTurretAt(sim, 5, 5)).toBe(w);
+  });
+
+  it('returns turret within hit radius', () => {
+    const sim = sim10x10();
+    const w = createWatcher(sim, 5, 5);
+    // 0.5 cells away, within default 0.75 radius
+    expect(findTurretAt(sim, 5.4, 5.3)).toBe(w);
+  });
+
+  it('returns null when click is outside hit radius', () => {
+    const sim = sim10x10();
+    createWatcher(sim, 5, 5);
+    // 1.5 cells away, outside 0.75 radius
+    expect(findTurretAt(sim, 6.5, 5)).toBeNull();
+  });
+
+  it('ignores dead turrets', () => {
+    const sim = sim10x10();
+    const w = createWatcher(sim, 5, 5);
+    w.alive = false;
+    expect(findTurretAt(sim, 5, 5)).toBeNull();
+  });
+
+  it('returns earliest-placed turret when overlapping', () => {
+    const sim = sim10x10();
+    const first = createWatcher(sim, 5, 5);
+    const second = createWatcher(sim, 5, 5); // same position
+    expect(findTurretAt(sim, 5, 5)).toBe(first);
+  });
+
+  it('respects custom hit radius', () => {
+    const sim = sim10x10();
+    const w = createWatcher(sim, 5, 5);
+    // Query at (5, 5.9) — 0.9 cells away, outside default 0.75, inside 1.2
+    expect(findTurretAt(sim, 5, 5.9, 0.75)).toBeNull();
+    expect(findTurretAt(sim, 5, 5.9, 1.2)).toBe(w);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════
+// selectTurret / deselectTurret
+// ═══════════════════════════════════════════════════════════════════════
+
+import { selectTurret, deselectTurret } from '../engine.js';
+
+describe('turrets — selection', () => {
+  it('selectTurret sets selectedEntityId', () => {
+    const sim = sim10x10();
+    const w = createWatcher(sim, 5, 5);
+    const result = selectTurret(sim, w.id);
+    expect(result).toBe(w);
+    expect(sim.selectedEntityId).toBe(w.id);
+  });
+
+  it('selectTurret returns null for non-existent id', () => {
+    const sim = sim10x10();
+    createWatcher(sim, 5, 5);
+    const result = selectTurret(sim, 9999);
+    expect(result).toBeNull();
+    expect(sim.selectedEntityId).toBeNull();
+  });
+
+  it('selectTurret returns null for dead turret', () => {
+    const sim = sim10x10();
+    const w = createWatcher(sim, 5, 5);
+    w.alive = false;
+    const result = selectTurret(sim, w.id);
+    expect(result).toBeNull();
+    expect(sim.selectedEntityId).toBeNull();
+  });
+
+  it('deselectTurret clears selectedEntityId', () => {
+    const sim = sim10x10();
+    const w = createWatcher(sim, 5, 5);
+    selectTurret(sim, w.id);
+    expect(sim.selectedEntityId).toBe(w.id);
+    deselectTurret(sim);
+    expect(sim.selectedEntityId).toBeNull();
+  });
+
+  it('deselectTurret is safe when nothing selected', () => {
+    const sim = sim10x10();
+    expect(() => deselectTurret(sim)).not.toThrow();
+    expect(sim.selectedEntityId).toBeNull();
+  });
+
+  it('selectedEntityId is initialized as null in createSim', () => {
+    const sim = sim10x10();
+    expect(sim.selectedEntityId).toBeNull();
   });
 });

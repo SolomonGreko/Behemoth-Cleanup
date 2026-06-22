@@ -1,7 +1,7 @@
 # Behemoth — Tower Defense Game
 
 > **Phase**: Core Systems (Day 1 complete — all core engine, rendering, lore, and frontend systems built)
-> **Last updated**: 2026-06-22 20:40 UTC
+> **Last updated**: 2026-06-22 21:19 UTC
 > **Maintained by**: The Scribe (Hermes)
 
 ## Overview
@@ -28,11 +28,12 @@ frontend/
       enemies.js                # Enemy types: AI behaviors (scout gap, tank taunt, crawler stack, boss enrage/shockwave, artillery ranged)
       world.js                  # World generation (terrain zones, base placement)
       labour.js                 # Labour/construction stubs
-      render.js                 # Canvas rendering (background, enemies, turrets, walls, health bars)
+      render.js                 # Canvas rendering (background, enemies, turrets, walls, bots, crystal drops, death particles, day/night overlay, selection ring, health bars, damage flash)
       sound.js                  # Sound playback consumer (event queue drain, mute toggle)
       config.js                 # All tuning — RESOURCE, COST, ECON, BOT, ENEMY, SCALING, WAVE, SWARM, BASE, TURRET, WALL, DAY_CYCLE
       index.js                  # Barrel exports
-      __tests__/                # Vitest test suites
+      __tests__/                # Vitest test suites (7 suites, 295 tests)
+        render.test.js          # Render regression tests (3 tests)
     components/
       BehemothGame.jsx          # Main game React component (includes SoundToggle)
       ResourceHUD.jsx           # Resource display HUD
@@ -75,9 +76,18 @@ docs/design/                       # Game design specs (Athena)
 - [x] **.gitignore** — node_modules/, build/, .vite/ excluded from tracking
 - [x] **Zeus gatekeep** — Enemy AI behaviors approved: 4/4 behaviors implemented, 276/276 tests pass
 - [x] **Day/night ambient overlay** — Full-canvas phase-tinted atmospheric overlay with smooth transitions, night vignette, and phase-specific composite operations (Aphrodite)
+- [x] **Crystal drop VFX** — Amber-gold diamond shard particles arc upward from enemy death points, 3-phase animation over 45 ticks (Aphrodite)
+- [x] **Storage cap L3 correction** — capUpgradePerLevel scalars→arrays (Stone 350→400, Crystal 125→150, Essence 175→200); design spec at docs/design/storage-cap-tuning.md (Athena)
+- [x] **BUG-005 fix** — drawDayNightOverlay latent NaN bug: sim.worldWidth/sim.worldHeight → sim.world.width/sim.world.height in night vignette fallback; 3 regression tests (Apollo)
+- [x] **Garden indicator** — Live garden stats (grass/moss count, dominant phase, Pulse Wave status) rendered in BehemothGame.jsx HUD (Hephaestus, Zeus-approved t_8300286c)
+- [x] **Click-to-select** — findTurretAt hit-test, selectTurret/deselectTurret engine functions, drawSelectionRing render pass (Hephaestus/Aphrodite, Zeus-approved t_4b63b4df)
+- [x] **Bot speed tuned** — BOT.speed 0.025→0.015 (75% of scout — bots must be defended) (Athena)
+- [x] **Labour system design spec** — Full labour.js architecture at docs/design/labour-system-design.md (Athena)
+- [x] **Zeus unblock** — Integration test t_e4c7bcc2 unblocked, all 3 remediation children complete
 
 ### In Progress
-- [ ] **Enemy behavior visuals** — Crawler jitter VFX remaining (boss enrage glow and shockwave VFX complete) (Aphrodite task t_6b2844e1)
+- [ ] **Enemy behavior visuals** — Crawler jitter VFX remaining (Aphrodite task t_6b2844e1)
+- [ ] **Integration test re-run** — t_e4c7bcc2 unblocked, ready for Apollo re-test
 
 ### Next Up
 - [ ] **Frontend integration tests** — React components exist but no component tests
@@ -87,7 +97,7 @@ docs/design/                       # Game design specs (Athena)
 
 ### Known Issues
 - **Push access blocked** — Remote `https://github.com/SolomonGreko/Behemoth.git` returns 403; commits are local only
-- **Demeter gap scan (20:24 UTC)** — Created t_6b2844e1 (Aphrodite enemy behavior visuals). Board state: 3 blocked (t_41554111 review-gated→approved, t_98da4cee needs-morpheus git credentials, t_e4c7bcc2 awaiting 3 child bug fixes), 3 todo (bug remediation).
+- **Zeus heartbeat (21:19 UTC)** — t_98da4cee still needs-morpheus (git credentials), t_21909ab7 todo for Aphrodite (enemy behavior visuals), board otherwise clear
 
 ## Resources
 
@@ -123,15 +133,16 @@ All tuning lives in `frontend/src/sim/config.js`:
 ## Tests
 
 ```
-Test Suites: 6
-Tests:       276 total — 276 passing
+Test Suites: 7
+Tests:       295 total — 295 passing
 ```
 - `resource.test.js` — 69 tests (resource accumulation, spending, caps)
 - `engine.test.js` — 58 tests (wave spawning, enemy movement, day/night, game-over, bot harvesting, wall siege, artillery behavior)
-- `turrets.test.js` — 37 tests (targeting, damage, upgrades, mounting)
+- `turrets.test.js` — 37 tests (targeting, damage, upgrades, mounting, findTurretAt)
 - `walls.test.js` — 66 tests (placement, damage, repair, upgrade, siege integration, engine purchase paths)
 - `resource-integration.test.js` — 28 tests (cross-module resource flows)
 - `security-adversarial.test.js` — 25 tests (overflow, injection, rate-limiting)
+- `render.test.js` — 3 tests (drawDayNightOverlay regression — BUG-005 NaN guard)
 
 ## Pantheon Agents
 

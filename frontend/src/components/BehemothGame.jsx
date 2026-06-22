@@ -7,9 +7,16 @@
  * This is the top-level game UI: canvas zone + HUD overlay.
  */
 
-import React from 'react';
+import React, { useRef, useEffect } from 'react';
 import { ResourceHUD, BotLabourHUD } from './ResourceHUD.jsx';
-import { getWavePreview, DAY_CYCLE, LEVEL, toggleSound } from '../sim/index.js';
+import {
+  getWavePreview, DAY_CYCLE, LEVEL, RESOURCE, toggleSound,
+  drawBackground, drawBase, drawEnemies, drawDeathParticles,
+  drawCrystalDrops, drawBossShockwaves, drawTurrets, drawBots,
+  drawWalls, drawDayNightOverlay, drawSelectionRing,
+  findTurretAt, selectTurret, deselectTurret,
+  getTurretById,
+} from '../sim/index.js';
 
 // ═══════════════════════════════════════════════════════════════════════
 // ENEMY TYPE STYLING
@@ -43,6 +50,86 @@ const LEVEL_IDENTITY = [
   { title: 'FORTRESS', desc: 'The Shroud recoils' },
   { title: 'BEHEMOTH', desc: 'Awakened' },
 ];
+
+// ═══════════════════════════════════════════════════════════════════════
+// GARDEN STATS — reads grid cells + pulse ability state
+// ═══════════════════════════════════════════════════════════════════════
+
+/**
+ * Phase to display-label mapping.
+ * Engine-phase → player-visible name.
+ */
+const GARDEN_PHASES = {
+  bare:    'Moss',
+  sprout:  'Grass I',
+  green:   'Grass II',
+  flowing: 'Grass III',
+};
+
+/**
+ * Gather garden stats from live sim state.
+ *
+ * Reads sim.world.grid for grass/moss cell counts and derives the
+ * dominant garden phase from the grass-to-garden ratio.  Also reads
+ * sim._abilityCooldowns for Pulse Wave status.
+ *
+ * Called inline during render — the React re-render cycle provides the
+ * RAF-frame freshness required by the AC.
+ *
+ * @param {object} sim — live sim state
+ * @returns {{ living: number, total: number, dominantPhase: string,
+ *             dominantPhaseLabel: string, pulseReady: boolean,
+ *             pulseCooldown: number, pulseActive: boolean }}
+ */
+function getGardenStats(sim) {
+  if (!sim?.world?.grid) {
+    return { living: 0, total: 0, dominantPhase: 'bare',
+             dominantPhaseLabel: 'Moss', pulseReady: false,
+             pulseCooldown: 0, pulseActive: false };
+  }
+
+  let grassCount = 0;
+  let mossCount = 0;
+
+  const grid = sim.world.grid;
+  for (let y = 0; y < grid.length; y++) {
+    const row = grid[y];
+    for (let x = 0; x < row.length; x++) {
+      const cell = row[x];
+      if (cell.grass) grassCount++;
+      if (cell.moss) mossCount++;
+    }
+  }
+
+  const living = grassCount;
+  const total = grassCount + mossCount;
+  const grassRatio = total > 0 ? grassCount / total : 0;
+
+  // Dominant phase derived from grass saturation
+  let dominantPhase = 'bare';
+  if (grassRatio >= 0.75)      dominantPhase = 'flowing';
+  else if (grassRatio >= 0.50) dominantPhase = 'green';
+  else if (grassRatio >= 0.25) dominantPhase = 'sprout';
+
+  const dominantPhaseLabel = GARDEN_PHASES[dominantPhase] || 'Moss';
+
+  // ── Pulse Wave status from ability system ─────────────────────────
+  const pulseCfg = RESOURCE.abilities?.pulseWave;
+  const cooldownExpiry = sim._abilityCooldowns?.pulseWave ?? 0;
+  const pulseCooldown = Math.max(0, cooldownExpiry - sim.tick);
+  const pulseReady = pulseCooldown === 0 && sim.tick > 0;
+  const pulseActive = sim.lastPulseWaveTick === sim.tick;
+
+  return {
+    living,
+    total,
+    dominantPhase,
+    dominantPhaseLabel,
+    pulseReady,
+    pulseCooldown,
+    pulseActive,
+  };
+}
 
 // ═══════════════════════════════════════════════════════════════════════
 // WAVE PREVIEW PANEL
@@ -125,11 +212,123 @@ function WavePreviewPanel({ sim }) {
 /**
  * BehemothGame — top-level game component.
  *
+ * Renders the full-screen game canvas (imperative draw loop) and the
+ * React HUD overlay on top.  The canvas reads from the live sim prop
+ * via a ref so the rAF loop never has a stale closure.
+ *
  * @param {object} props
  * @param {object} props.sim — sim state with sim.resourceHUD from resourceTick
  */
 export function BehemothGame({ sim }) {
   if (!sim) return null;
+
+  const canvasRef = useRef(null);
+  const simRef = useRef(sim);
+
+  // Keep the ref pinned to the latest sim prop so the rAF loop
+  // always reads the current tick / world dimensions.
+  simRef.current = sim;
+
+  // ── Canvas render loop ───────────────────────────────────────────
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const ctx = canvas.getContext('2d');
+    let rafId;
+    let running = true;
+
+    // ── Click handler: screen → world coords → hit-test → select/deselect
+    const handleClick = (e) => {
+      const s = simRef.current;
+      if (!s || !s.world) return;
+
+      const rect = canvas.getBoundingClientRect();
+      const screenX = e.clientX - rect.left;
+      const screenY = e.clientY - rect.top;
+
+      const scale = Math.min(canvas.width / s.world.width, canvas.height / s.world.height);
+      const worldX = screenX / scale;
+      const worldY = screenY / scale;
+
+      const turret = findTurretAt(s, worldX, worldY);
+      if (turret) {
+        selectTurret(s, turret.id);
+      } else {
+        deselectTurret(s);
+      }
+    };
+
+    // ── Keyboard handler: Escape → deselect
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') {
+        const s = simRef.current;
+        if (s) deselectTurret(s);
+      }
+    };
+
+    canvas.addEventListener('click', handleClick);
+    window.addEventListener('keydown', handleKeyDown);
+
+    const render = () => {
+      if (!running) return;
+
+      const s = simRef.current;
+      if (!s || !s.world) {
+        rafId = requestAnimationFrame(render);
+        return;
+      }
+
+      const { world, tick = 0 } = s;
+      const canvasW = canvas.width;
+      const canvasH = canvas.height;
+      const scale = Math.min(canvasW / world.width, canvasH / world.height);
+
+      // Clear
+      ctx.clearRect(0, 0, canvasW, canvasH);
+
+      // ── Render pipeline (back to front) ───────────────────────────
+      drawBackground(ctx, canvasW, canvasH, s, scale);
+      drawBase(ctx, s, scale);
+      drawWalls(ctx, s, scale);
+      drawEnemies(ctx, s, scale);
+      drawTurrets(ctx, s, scale);
+      drawBots(ctx, s, scale);
+      drawSelectionRing(ctx, s, scale);
+      drawDeathParticles(ctx, scale, tick);
+      drawCrystalDrops(ctx, scale, tick);
+      drawBossShockwaves(ctx, scale, tick);
+      drawDayNightOverlay(ctx, canvasW, canvasH, s, tick);
+
+      rafId = requestAnimationFrame(render);
+    };
+
+    rafId = requestAnimationFrame(render);
+
+    return () => {
+      running = false;
+      if (rafId) cancelAnimationFrame(rafId);
+      canvas.removeEventListener('click', handleClick);
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, []);
+
+  // ── Canvas resize to fill parent ─────────────────────────────────
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const resize = () => {
+      const parent = canvas.parentElement;
+      if (!parent) return;
+      canvas.width = parent.clientWidth;
+      canvas.height = parent.clientHeight;
+    };
+
+    resize();
+    window.addEventListener('resize', resize);
+    return () => window.removeEventListener('resize', resize);
+  }, []);
 
   // ResourceHUD data is built by engine.js resourceTick each sim tick
   const hudData = sim.resourceHUD;
@@ -139,7 +338,11 @@ export function BehemothGame({ sim }) {
 
   return (
     <div className="behemoth-game" style={styles.gameContainer}>
-      {/* Game canvas / renderer goes here */}
+      {/* Game canvas — fills the container, behind the HUD */}
+      <canvas
+        ref={canvasRef}
+        style={styles.canvas}
+      />
 
       {/* HUD overlay — top-right corner */}
       <div style={styles.hudContainer}>
@@ -162,6 +365,12 @@ export function BehemothGame({ sim }) {
 
         {/* Wave counter */}
         <WaveCounter sim={sim} />
+
+        {/* Watchers panel — per-turret health bars + upgrade badges */}
+        <WatchersPanel sim={sim} />
+
+        {/* Garden progress — tilled cells, phase, pulse status */}
+        <GardenProgressIndicator sim={sim} />
 
         {/* Base level badge — visually distinct per-level styling */}
         <BaseLevelBadge hud={sim.hud} />
@@ -481,6 +690,386 @@ function BaseLevelBadge({ hud }) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
+// INSPECT PANEL — detailed stats for the selected turret
+// ═══════════════════════════════════════════════════════════════════════
+
+/**
+ * InspectPanel — detailed overlay for the currently selected turret.
+ *
+ * Appears inside the WatchersPanel when sim.selectedEntityId is non-null.
+ * Shows turret identity, HP with exact values, combat stats, and upgrade
+ * badge states. Dismisses when selection is cleared (Escape / click ground).
+ *
+ * Visual identity: sky-blue accent (#6ba4c7) matching the selection ring.
+ * Separated from per-turret cards by a subtle divider.
+ *
+ * @param {object} props
+ * @param {object} props.sim — live sim state
+ * @param {object} props.turret — the selected turret object
+ */
+function InspectPanel({ sim, turret }) {
+  var hpRatio = turret.maxHp > 0 ? turret.hp / turret.maxHp : 0;
+
+  // HP bar colour: green (>66%) → amber (33-66%) → red (<33%)
+  var hpColor;
+  if (hpRatio > 0.66) {
+    hpColor = 'rgba(34, 197, 94, 0.85)';
+  } else if (hpRatio > 0.33) {
+    hpColor = 'rgba(245, 158, 11, 0.85)';
+  } else {
+    hpColor = 'rgba(239, 68, 68, 0.85)';
+  }
+
+  var isAdvanced = turret.type === 'turret';
+  var typeLabel = isAdvanced ? 'Turret' : 'Watcher';
+  var typeColor = isAdvanced ? '#6ba4c7' : '#4b8bb4';
+
+  // Cooldown percentage for the laser CD bar
+  var cdRatio = turret.laserCdMax > 0
+    ? 1 - (turret.laserCd / turret.laserCdMax)
+    : 1;
+
+  return React.createElement('div', { style: styles.inspectPanel },
+    // Header row
+    React.createElement('div', { style: styles.inspectHeader },
+      React.createElement('span', { style: styles.inspectTitle },
+        '\u25c8 INSPECT'
+      ),
+      React.createElement('span', { style: Object.assign({}, styles.inspectTypeTag, { color: typeColor, borderColor: typeColor }) },
+        typeLabel
+      )
+    ),
+
+    // Turret ID + position
+    React.createElement('div', { style: styles.inspectIdRow },
+      React.createElement('span', { style: Object.assign({}, styles.inspectId, { color: typeColor }) },
+        '#' + turret.id
+      ),
+      React.createElement('span', { style: styles.inspectPos },
+        '(' + turret.x.toFixed(0) + ', ' + turret.y.toFixed(0) + ')'
+      )
+    ),
+
+    // HP bar (larger, prominent)
+    React.createElement('div', { style: styles.inspectHpRow },
+      React.createElement('div', { style: styles.inspectHpBarTrack },
+        React.createElement('div', {
+          style: Object.assign({}, styles.inspectHpBarFill, {
+            width: (hpRatio * 100) + '%',
+            background: hpColor,
+            boxShadow: '0 0 8px ' + hpColor,
+          }),
+        })
+      ),
+      React.createElement('span', { style: styles.inspectHpText },
+        turret.hp + '/' + turret.maxHp
+      )
+    ),
+
+    // Combat stats row
+    React.createElement('div', { style: styles.inspectStatsGrid },
+      // Range
+      React.createElement('div', { style: styles.inspectStat },
+        React.createElement('span', { style: styles.inspectStatLabel }, 'Range'),
+        React.createElement('span', { style: styles.inspectStatValue },
+          turret.range.toFixed(1) + 'c'
+        )
+      ),
+      // Laser damage
+      React.createElement('div', { style: styles.inspectStat },
+        React.createElement('span', { style: styles.inspectStatLabel }, 'Dmg'),
+        React.createElement('span', { style: styles.inspectStatValue, color: '#f87171' },
+          turret.laserDamage
+        )
+      ),
+      // Laser cooldown
+      React.createElement('div', { style: styles.inspectStat },
+        React.createElement('span', { style: styles.inspectStatLabel }, 'CD'),
+        React.createElement('div', { style: styles.inspectCdTrack },
+          React.createElement('div', {
+            style: Object.assign({}, styles.inspectCdFill, {
+              width: (cdRatio * 100) + '%',
+            }),
+          })
+        )
+      ),
+    ),
+
+    // Upgrade badges
+    React.createElement('div', { style: styles.inspectBadgesRow },
+      React.createElement(UpgradeBadge, {
+        icon: '\u2b21',
+        label: 'Chassis',
+        active: turret.type === 'turret',
+        color: '#6ba4c7',
+      }),
+      React.createElement(UpgradeBadge, {
+        icon: '\u25ce',
+        label: 'Optics',
+        active: turret.mounted,
+        color: '#38bdf8',
+      }),
+      React.createElement(UpgradeBadge, {
+        icon: '\u2726',
+        label: 'Mortar',
+        active: turret.hasMortar,
+        color: '#fbbf24',
+      }),
+    ),
+
+    // Dismiss hint
+    React.createElement('div', { style: styles.inspectDismiss },
+      'ESC to dismiss'
+    )
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// WATCHERS PANEL — per-watcher health bars + upgrade badges
+// ═══════════════════════════════════════════════════════════════════════
+
+/**
+ * WatchersPanel — displays per-turret health bars and upgrade badges.
+ *
+ * Visible when sim.turrets has at least one alive turret.
+ * Each watcher card shows:
+ *   - ID number + type label (Watcher / Turret)
+ *   - Colour-coded health bar (green > amber > red)
+ *   - Three upgrade badges (Chassis / Optics / Mortar) with active/dimmed states
+ *
+ * Upgrade badge mapping:
+ *   - Chassis (⬡): type === 'turret' (advanced chassis upgrade)
+ *   - Optics (◎): mounted (wall-mounted targeting/range bonus)
+ *   - Mortar (✦): hasMortar (AoE splash weapon)
+ *
+ * @param {object} props
+ * @param {object} props.sim — live sim state (reads sim.turrets)
+ */
+function WatchersPanel({ sim }) {
+  const turrets = (sim.turrets || []).filter(function (t) { return t.alive; });
+  const selectedId = sim.selectedEntityId;
+  const selectedTurret = selectedId != null ? getTurretById(sim, selectedId) : null;
+
+  // Show panel if we have turrets OR if there's a valid selection
+  if (turrets.length === 0 && !selectedTurret) return null;
+
+  return (
+    <div style={styles.watchersPanel} role="region" aria-label="Watchers">
+      {/* INSPECT panel — detailed stats for the selected turret */}
+      {selectedTurret && React.createElement(InspectPanel, { sim: sim, turret: selectedTurret })}
+
+      {/* Panel header */}
+      <div style={styles.watchersHeader}>
+        <span style={styles.watchersTitle}>{'\u25c6'} WATCHERS</span>
+        <span style={styles.watchersCount}>{turrets.length}</span>
+      </div>
+
+      {/* Per-watcher cards */}
+      {turrets.map(function (turret) {
+        return React.createElement(WatcherCard, { key: turret.id, turret: turret });
+      })}
+    </div>
+  );
+}
+
+/**
+ * WatcherCard — a single turret's health bar and upgrade badge row.
+ *
+ * @param {object} props
+ * @param {object} props.turret — { id, type, hp, maxHp, mounted, hasMortar }
+ */
+function WatcherCard({ turret }) {
+  var hpRatio = turret.maxHp > 0 ? turret.hp / turret.maxHp : 0;
+
+  // Health bar colour: green (>66%) → amber (33-66%) → red (<33%)
+  var hpColor;
+  if (hpRatio > 0.66) {
+    hpColor = 'rgba(34, 197, 94, 0.85)';   // emerald-500
+  } else if (hpRatio > 0.33) {
+    hpColor = 'rgba(245, 158, 11, 0.85)';  // amber-500
+  } else {
+    hpColor = 'rgba(239, 68, 68, 0.85)';   // red-500
+  }
+
+  var isAdvanced = turret.type === 'turret';
+  var typeLabel = isAdvanced ? 'Turret' : 'Watcher';
+  var typeColor = isAdvanced ? '#6ba4c7' : '#4b8bb4';
+
+  return (
+    <div style={styles.watcherCard}>
+      {/* ID + type label row */}
+      <div style={styles.watcherIdRow}>
+        <span style={Object.assign({}, styles.watcherId, { color: typeColor })}>
+          {'#' + turret.id}
+        </span>
+        <span style={Object.assign({}, styles.watcherType, { color: typeColor })}>
+          {typeLabel}
+        </span>
+      </div>
+
+      {/* Health bar */}
+      <div style={styles.hpRow}>
+        <div style={styles.hpBarTrack}>
+          <div style={Object.assign({}, styles.hpBarFill, {
+            width: (hpRatio * 100) + '%',
+            background: hpColor,
+            boxShadow: '0 0 6px ' + hpColor,
+          })} />
+        </div>
+        <span style={styles.hpText}>
+          {turret.hp + '/' + turret.maxHp}
+        </span>
+      </div>
+
+      {/* Upgrade badges */}
+      <div style={styles.badgesRow}>
+        {React.createElement(UpgradeBadge, {
+          icon: '\u2b21',
+          label: 'Chassis',
+          active: turret.type === 'turret',
+          color: '#6ba4c7',
+        })}
+        {React.createElement(UpgradeBadge, {
+          icon: '\u25ce',
+          label: 'Optics',
+          active: turret.mounted,
+          color: '#38bdf8',
+        })}
+        {React.createElement(UpgradeBadge, {
+          icon: '\u2726',
+          label: 'Mortar',
+          active: turret.hasMortar,
+          color: '#fbbf24',
+        })}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * UpgradeBadge — a single upgrade icon badge with active/dimmed state.
+ *
+ * @param {object} props
+ * @param {string} props.icon — unicode character for the badge
+ * @param {string} props.label — tooltip / aria label for the upgrade
+ * @param {boolean} props.active — whether the upgrade is purchased
+ * @param {string} props.color — active colour hex
+ */
+function UpgradeBadge({ icon, label, active, color }) {
+  return (
+    <div
+      style={Object.assign({}, styles.badge, {
+        color: active ? color : '#52525b',
+        opacity: active ? 1 : 0.35,
+        textShadow: active ? '0 0 6px ' + color + '88' : 'none',
+      })}
+      title={label + ': ' + (active ? 'ACTIVE' : 'inactive')}
+    >
+      {icon}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// GARDEN PROGRESS INDICATOR
+// ═══════════════════════════════════════════════════════════════════════
+
+/**
+ * GardenProgressIndicator — emerald-themed garden status panel.
+ *
+ * Displays three data rows:
+ *   1. Cells tilled / total ratio (living grass cells vs garden area)
+ *   2. Dominant garden phase (Moss → Grass I → Grass II → Grass III)
+ *   3. Pulse Wave status (READY / cooldown Ns / ACTIVE / —)
+ *
+ * Reads sim data via getGardenStats() on every render — the React
+ * re-render cycle provides real-time freshness per the AC.
+ *
+ * Visual identity: emerald border + emerald tint background, matching
+ * the \"Emerald section\" pattern from behemoth-ui.
+ *
+ * @param {object} props
+ * @param {object} props.sim — live sim state
+ */
+function GardenProgressIndicator({ sim }) {
+  const gs = getGardenStats(sim);
+
+  // Hide panel when no garden cells exist (pre-init or destroyed state)
+  if (gs.total === 0) return null;
+
+  // ── Progress bar: living / total ratio ─────────────────────────────
+  const ratio = gs.total > 0 ? Math.min(1, gs.living / gs.total) : 0;
+
+  // ── Pulse status label ─────────────────────────────────────────────
+  let pulseLabel, pulseColor;
+  if (gs.pulseActive) {
+    pulseLabel = 'ACTIVE';
+    pulseColor = '#fbbf24';  // amber — urgency / effect in progress
+  } else if (gs.pulseCooldown > 0) {
+    const cooldownSec = Math.ceil(gs.pulseCooldown / 60);
+    pulseLabel = `CD ${cooldownSec}s`;
+    pulseColor = '#d97706';  // dim amber — recharging
+  } else if (gs.pulseReady) {
+    pulseLabel = 'READY';
+    pulseColor = '#34d399';  // emerald — ready to use
+  } else {
+    pulseLabel = '\u2014';   // em-dash — no pulse ability
+    pulseColor = '#71717a';  // zinc-500
+  }
+
+  return (
+    <div style={styles.gardenPanel} role="region" aria-label="Garden Progress">
+      {/* Header */}
+      <div style={styles.gardenHeader}>GARDEN</div>
+
+      {/* Cells ratio row */}
+      <div style={styles.gardenRow}>
+        <span style={styles.gardenLabel}>Cells</span>
+        <span style={styles.gardenCount}>
+          <span style={{ color: '#34d399' }}>{gs.living}</span>
+          <span style={{ color: '#71717a' }}> / {gs.total}</span>
+        </span>
+      </div>
+
+      {/* Progress bar */}
+      <div style={styles.gardenBarTrack}>
+        <div
+          style={{
+            ...styles.gardenBarFill,
+            width: `${ratio * 100}%`,
+            boxShadow: `0 0 6px #34d39966`,
+          }}
+        />
+      </div>
+
+      {/* Dominant phase */}
+      <div style={styles.gardenRow}>
+        <span style={styles.gardenLabel}>Phase</span>
+        <span style={{ ...styles.gardenValue, color: '#34d399' }}>
+          {gs.dominantPhaseLabel}
+        </span>
+      </div>
+
+      {/* Pulse Wave status */}
+      <div style={styles.gardenRow}>
+        <span style={styles.gardenLabel}>Pulse</span>
+        <span
+          style={{
+            ...styles.gardenValue,
+            color: pulseColor,
+            ...(gs.pulseActive
+              ? { textShadow: '0 0 6px #fbbf2488', fontWeight: 'bold' }
+              : {}),
+          }}
+        >
+          {pulseLabel}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════
 // STYLES
 // ═══════════════════════════════════════════════════════════════════════
 
@@ -490,6 +1079,16 @@ const styles = {
     width: '100%',
     height: '100%',
     overflow: 'hidden',
+  },
+
+  canvas: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    width: '100%',
+    height: '100%',
+    display: 'block',
+    zIndex: 1,
   },
 
   hudContainer: {
@@ -604,6 +1203,77 @@ const styles = {
     fontSize: '15px',
     lineHeight: 1,
     transition: 'opacity 0.15s',
+  },
+
+  // ── Garden Progress Indicator ────────────────────────────────────
+
+  gardenPanel: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '4px',
+    padding: '8px 12px',
+    background: 'rgba(6, 78, 59, 0.12)',   // emerald-950/15
+    borderRadius: '8px',
+    fontFamily: "'Courier New', monospace",
+    border: '1px solid rgba(6, 78, 59, 0.60)',  // emerald-900/60
+    userSelect: 'none',
+    minWidth: '160px',
+  },
+
+  gardenHeader: {
+    fontSize: '10px',
+    color: '#34d399',
+    letterSpacing: '3px',
+    textTransform: 'uppercase',
+    fontWeight: 'bold',
+    textAlign: 'center',
+    paddingBottom: '2px',
+    borderBottom: '1px solid rgba(52, 211, 153, 0.15)',
+  },
+
+  gardenRow: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: '8px',
+    padding: '1px 0',
+  },
+
+  gardenLabel: {
+    fontSize: '10px',
+    color: '#a1a1aa',     // zinc-400
+    letterSpacing: '1px',
+    textTransform: 'uppercase',
+    flexShrink: 0,
+  },
+
+  gardenValue: {
+    fontSize: '11px',
+    fontWeight: 'bold',
+    fontVariantNumeric: 'tabular-nums',
+    letterSpacing: '1px',
+  },
+
+  gardenCount: {
+    fontSize: '12px',
+    fontWeight: 'bold',
+    fontVariantNumeric: 'tabular-nums',
+  },
+
+  gardenBarTrack: {
+    width: '100%',
+    height: '3px',
+    background: 'rgba(255, 255, 255, 0.06)',
+    borderRadius: '2px',
+    overflow: 'hidden',
+    margin: '1px 0',
+  },
+
+  gardenBarFill: {
+    height: '100%',
+    borderRadius: '2px',
+    background: '#34d399',  // emerald-400
+    transition: 'width 0.4s ease',
   },
 
   // ── Base Level Badge ────────────────────────────────────────────
@@ -817,6 +1487,128 @@ const styles = {
     fontSize: '11px',
     color: '#888888',
     flexShrink: 0,
+  },
+
+  // ── Watchers Panel ───────────────────────────────────────────────
+
+  watchersPanel: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '5px',
+    padding: '8px 10px',
+    background: 'rgba(0, 0, 0, 0.75)',
+    borderRadius: '8px',
+    border: '1px solid rgba(255, 255, 255, 0.1)',
+    fontFamily: "'Courier New', monospace",
+    userSelect: 'none',
+    minWidth: '190px',
+  },
+
+  watchersHeader: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingBottom: '4px',
+    borderBottom: '1px solid rgba(255, 255, 255, 0.06)',
+  },
+
+  watchersTitle: {
+    fontSize: '11px',
+    color: '#6ba4c7',
+    letterSpacing: '2px',
+    textTransform: 'uppercase',
+    fontWeight: 'bold',
+  },
+
+  watchersCount: {
+    fontSize: '13px',
+    color: '#93c5e8',
+    fontWeight: 'bold',
+    fontVariantNumeric: 'tabular-nums',
+    background: 'rgba(107, 164, 199, 0.12)',
+    borderRadius: '4px',
+    padding: '1px 7px',
+    minWidth: '22px',
+    textAlign: 'center',
+  },
+
+  watcherCard: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '4px',
+    padding: '6px 8px',
+    background: 'rgba(255, 255, 255, 0.03)',
+    borderRadius: '5px',
+    border: '1px solid rgba(255, 255, 255, 0.04)',
+  },
+
+  watcherIdRow: {
+    display: 'flex',
+    alignItems: 'baseline',
+    gap: '8px',
+  },
+
+  watcherId: {
+    fontSize: '14px',
+    fontWeight: 'bold',
+    fontVariantNumeric: 'tabular-nums',
+    letterSpacing: '1px',
+  },
+
+  watcherType: {
+    fontSize: '10px',
+    textTransform: 'uppercase',
+    letterSpacing: '1.5px',
+    opacity: 0.75,
+  },
+
+  hpRow: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+  },
+
+  hpBarTrack: {
+    flex: 1,
+    height: '4px',
+    background: 'rgba(255, 255, 255, 0.08)',
+    borderRadius: '2px',
+    overflow: 'hidden',
+  },
+
+  hpBarFill: {
+    height: '100%',
+    borderRadius: '2px',
+    transition: 'width 0.3s ease, background 0.3s ease',
+  },
+
+  hpText: {
+    fontSize: '10px',
+    color: '#a1a1aa',
+    fontVariantNumeric: 'tabular-nums',
+    flexShrink: 0,
+    minWidth: '48px',
+    textAlign: 'right',
+  },
+
+  badgesRow: {
+    display: 'flex',
+    gap: '6px',
+    justifyContent: 'center',
+    paddingTop: '2px',
+  },
+
+  badge: {
+    width: '24px',
+    height: '24px',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    fontSize: '14px',
+    background: 'rgba(255, 255, 255, 0.04)',
+    borderRadius: '4px',
+    transition: 'color 0.3s ease, opacity 0.3s ease, text-shadow 0.3s ease',
+    cursor: 'default',
   },
 };
 

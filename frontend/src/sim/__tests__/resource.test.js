@@ -702,8 +702,8 @@ describe('edge cases', () => {
     it('upgraded cap is reflected in resourceCaps', () => {
       const sim = createTestSim({
         resourceCaps: {
-          stone: 200 + RESOURCE.stone.capUpgradePerLevel * 2, // L2: 300
-          crystal: 50 + RESOURCE.crystal.capUpgradePerLevel * 1, // L1: 75
+          stone: RESOURCE.stone.capUpgradePerLevel[2], // L2: 300
+          crystal: RESOURCE.crystal.capUpgradePerLevel[1], // L1: 75
           essence: 100, // default
         },
       });

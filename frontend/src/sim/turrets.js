@@ -323,3 +323,37 @@ export function getTurretSummary(sim) {
 export function getTurretById(sim, id) {
   return sim.turrets.find((t) => t.id === id) || null;
 }
+
+/**
+ * Find a turret at the given world coordinates via hit-test.
+ *
+ * Checks each alive turret: if the distance from (worldX, worldY) to
+ * the turret's center is ≤ HIT_RADIUS, returns that turret.
+ * If multiple turrets overlap, returns the one with the smallest id
+ * (consistent tie-break — earliest-placed wins).
+ *
+ * @param {object} sim
+ * @param {number} worldX
+ * @param {number} worldY
+ * @param {number} [hitRadius=0.75] — cells tolerance for click detection
+ * @returns {object|null} the hit turret, or null
+ */
+export function findTurretAt(sim, worldX, worldY, hitRadius = 0.75) {
+  let best = null;
+  let bestId = Infinity;
+
+  for (const turret of sim.turrets) {
+    if (!turret.alive) continue;
+
+    const dx = turret.x - worldX;
+    const dy = turret.y - worldY;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+
+    if (dist <= hitRadius && turret.id < bestId) {
+      best = turret;
+      bestId = turret.id;
+    }
+  }
+
+  return best;
+}
