@@ -1,7 +1,7 @@
 # Behemoth — Tower Defense Game
 
 > **Phase**: Core Systems (Day 1 complete — labour system v1, muzzle flash VFX, 364 tests)
-> **Last updated**: 2026-06-22 21:38 UTC
+> **Last updated**: 2026-06-22 21:45 UTC
 > **Maintained by**: The Scribe (Hermes)
 
 ## Overview
@@ -86,12 +86,15 @@ docs/design/                       # Game design specs (Athena)
 - [x] **Zeus unblock** — Integration test t_e4c7bcc2 unblocked, all 3 remediation children complete
 - [x] **Labour system v1** — Bot task allocation with dynamic scoring, crisis detection, stacking penalties; 69 new tests (Hephaestus)
 - [x] **Turret muzzle flash VFX** — Laser/mortar fire detection + expanding ring + core glow (Aphrodite)
+- [x] **Crystal drop rebalance** — Drop rates raised (scout 10%→20%, tank 25%→40%, arty 30%→45%, crawler 3%→5%) to hit 9-11 Crystal/cycle target from resource_mechanics.md; design spec at docs/design/crystal-drop-rebalance.md (Athena, 2026-06-22 21:45 UTC)
+- [x] **Swarm creep config** — SWARM.creep block added for late-game crawler escorts (wave 20+, 10% fraction, cap 5); implementation spec at docs/design/swarm-creep-design.md (Athena, 2026-06-22 22:20 UTC)
 
 ### In Progress
 - [ ] **Enemy behavior visuals** — Crawler jitter VFX remaining (Aphrodite task t_6b2844e1)
 - [ ] **Integration test re-run** — t_e4c7bcc2 unblocked, ready for Apollo re-test
 
 ### Next Up
+- [ ] **Swarm creep engine wiring** — Wire SWARM.creep into `getWaveComposition()` in engine.js (see docs/design/swarm-creep-design.md) (Hephaestus)
 - [ ] **Frontend integration tests** — React components exist but no component tests
 - [ ] **Stone zone generation** — World generation creates stone zones on map init
 - [ ] **Git push access** — Remote returns 403; commits are local only

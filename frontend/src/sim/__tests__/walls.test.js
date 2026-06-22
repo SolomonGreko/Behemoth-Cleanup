@@ -6,7 +6,7 @@
  * findBlockingWall, isPointInWall, canMountOnWall, siege integration.
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
+
 import {
   createWall,
   canPlaceWall,

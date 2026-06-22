@@ -8,7 +8,7 @@
  * Uses small sim states constructed manually for fast, isolated testing.
  */
 
-import { describe, it, expect } from 'vitest';
+
 import {
   buildJobBoard,
   scoreJob,

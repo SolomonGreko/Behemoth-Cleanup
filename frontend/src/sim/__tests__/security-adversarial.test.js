@@ -4,7 +4,7 @@
  * Probes the resource system with malicious inputs to validate
  * defenses against client-side resource manipulation.
  */
-import { describe, it, expect } from 'vitest';
+
 import { canAfford, trySpend, addResources } from '../resource.js';
 import { RESOURCE, COST, ECON } from '../config.js';
 
