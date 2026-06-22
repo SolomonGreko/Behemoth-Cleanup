@@ -1,0 +1,13 @@
+{
+  "name": "behemoth-resource-system",
+  "type": "module",
+  "version": "1.0.0",
+  "description": "Behemoth sim resource system — data model, harvesting, drops, HUD, cost checking",
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "devDependencies": {
+    "vitest": "^1.6.0"
+  }
+}

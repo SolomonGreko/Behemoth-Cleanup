@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Behemoth — Resource HUD Mockup</title>
+<style>
+  /* ── Behemoth UI Design System ─────────────────────────── */
+  :root {
+    --bg: #09090b;
+    --surface: #18181b;
+    --border: #27272a;
+    --amber: #fbbf24;
+    --amber-dim: #d97706;
+    --emerald: #34d399;
+    --sky: #38bdf8;
+    --rose: #fb7185;
+    --zinc-100: #f4f4f5;
+    --zinc-200: #e4e4e7;
+    --zinc-400: #a1a1aa;
+    --zinc-500: #71717a;
+    --zinc-600: #52525b;
+    /* Resource colors */
+    --stone-color: #b8a88a;
+    --stone-bg: rgba(184, 168, 138, 0.12);
+    --stone-border: rgba(184, 168, 138, 0.3);
+    --crystal-color: #70a0e0;
+    --crystal-bg: rgba(112, 160, 224, 0.12);
+    --crystal-border: rgba(112, 160, 224, 0.3);
+    --essence-color: #e8c870;
+    --essence-bg: rgba(232, 200, 112, 0.12);
+    --essence-border: rgba(232, 200, 112, 0.3);
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--zinc-100);
+    font-family: "Fira Code", "Cascadia Code", ui-monospace, monospace;
+    font-size: 11px;
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+    min-height: 100vh;
+    padding: 40px 20px;
+  }
+
+  /* ── HUD Panel Container ───────────────────────────────── */
+  .hud-panel {
+    width: 320px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  /* ── Resource Section ──────────────────────────────────── */
+  .resources-section {
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: rgba(24, 24, 27, 0.4);
+    padding: 12px;
+  }
+
+  .section-header {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    color: var(--amber);
+    margin-bottom: 10px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .section-header::before {
+    content: "◆";
+    font-size: 6px;
+  }
+
+  /* ── Resource Row ──────────────────────────────────────── */
+  .resource-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 10px;
+    border-radius: 4px;
+    border: 1px solid transparent;
+    margin-bottom: 4px;
+    transition: border-color 0.2s;
+  }
+
+  .resource-row:hover {
+    border-color: var(--border);
+  }
+
+  .resource-row.stone { border-color: var(--stone-border); background: var(--stone-bg); }
+  .resource-row.crystal { border-color: var(--crystal-border); background: var(--crystal-bg); }
+  .resource-row.essence { border-color: var(--essence-border); background: var(--essence-bg); }
+
+  .resource-row.at-cap {
+    border-color: rgba(251, 191, 36, 0.4) !important;
+  }
+
+  /* ── Icon ──────────────────────────────────────────────── */
+  .resource-icon {
+    width: 24px;
+    height: 24px;
+    flex-shrink: 0;
+    image-rendering: pixelated;
+  }
+
+  /* ── Info ──────────────────────────────────────────────── */
+  .resource-info {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .resource-name {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    font-weight: 600;
+  }
+
+  .resource-row.stone .resource-name { color: var(--stone-color); }
+  .resource-row.crystal .resource-name { color: var(--crystal-color); }
+  .resource-row.essence .resource-name { color: var(--essence-color); }
+
+  .resource-rate {
+    font-size: 9px;
+    color: var(--zinc-500);
+  }
+
+  .resource-rate.active { color: var(--zinc-400); }
+
+  /* ── Counter ───────────────────────────────────────────── */
+  .resource-counter {
+    font-size: 13px;
+    font-weight: 700;
+    font-family: "Fira Code", "Cascadia Code", ui-monospace, monospace;
+    text-align: right;
+    min-width: 70px;
+    letter-spacing: 0.5px;
+  }
+
+  .resource-row.stone .resource-counter { color: var(--stone-color); }
+  .resource-row.crystal .resource-counter { color: var(--crystal-color); }
+  .resource-row.essence .resource-counter { color: var(--essence-color); }
+
+  .resource-counter .cap { color: var(--zinc-500); font-weight: 400; }
+  .resource-counter.full { color: var(--amber); font-size: 10px; display: block; }
+
+  /* ── Cap Bar ───────────────────────────────────────────── */
+  .cap-bar-track {
+    width: 100%;
+    height: 2px;
+    background: rgba(255,255,255,0.06);
+    border-radius: 1px;
+    overflow: hidden;
+    margin-top: 1px;
+  }
+
+  .cap-bar-fill {
+    height: 100%;
+    border-radius: 1px;
+    transition: width 0.4s ease-out;
+  }
+
+  .cap-bar-fill.stone { background: var(--stone-color); opacity: 0.7; }
+  .cap-bar-fill.crystal { background: var(--crystal-color); opacity: 0.7; }
+  .cap-bar-fill.essence { background: var(--essence-color); opacity: 0.7; }
+
+  /* ── Tooltip hint ──────────────────────────────────────── */
+  .tooltip-hint {
+    font-size: 8px;
+    color: var(--zinc-600);
+    text-align: center;
+    margin-top: 4px;
+    opacity: 0;
+    transition: opacity 0.3s;
+  }
+
+  .resources-section:hover .tooltip-hint { opacity: 1; }
+
+  /* ── Legend / Divider ──────────────────────────────────── */
+  .legend-dot {
+    display: inline-block;
+    width: 6px;
+    height: 6px;
+    border-radius: 1px;
+    margin-right: 4px;
+  }
+  .legend-dot.stone { background: var(--stone-color); }
+  .legend-dot.crystal { background: var(--crystal-color); }
+  .legend-dot.essence { background: var(--essence-color); }
+
+  /* ── Three variants (row layout) ───────────────────────── */
+  .variant-label {
+    font-size: 9px;
+    color: var(--zinc-500);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-top: 16px;
+    margin-bottom: 6px;
+    padding-left: 2px;
+  }
+
+  /* Variant 1: Compact (all on one line per resource) */
+  /* (default above) */
+
+  /* Variant 2: Minimal (icon + counter only, no labels) */
+  .variant-minimal .resource-row {
+    gap: 6px;
+    padding: 6px 8px;
+  }
+  .variant-minimal .resource-name,
+  .variant-minimal .resource-rate,
+  .variant-minimal .cap-bar-track { display: none; }
+
+  /* Variant 3: Expanded (includes purchase button hints) */
+  .variant-expanded .resource-footer {
+    display: flex;
+    gap: 4px;
+    margin-top: 2px;
+  }
+  .purchase-hint {
+    font-size: 8px;
+    padding: 1px 4px;
+    border-radius: 2px;
+    background: rgba(255,255,255,0.05);
+    color: var(--zinc-500);
+  }
+  .purchase-hint.affordable {
+    background: rgba(251, 191, 36, 0.15);
+    color: var(--amber);
+    cursor: pointer;
+  }
+</style>
+</head>
+<body>
+
+<div class="hud-panel">
+
+  <!-- ═══ VARIANT 1: Default (compact with rate) ═══ -->
+  <div class="variant-label">→ Default Layout (recommended)</div>
+
+  <div class="resources-section">
+    <div class="section-header">Resources</div>
+
+    <!-- Stone -->
+    <div class="resource-row stone">
+      <img class="resource-icon" src="icons/stone.png" alt="Stone" width="24" height="24">
+      <div class="resource-info">
+        <span class="resource-name">Stone</span>
+        <span class="resource-rate active">+0.5/s · 3 bots</span>
+        <div class="cap-bar-track"><div class="cap-bar-fill stone" style="width:73%"></div></div>
+      </div>
+      <div class="resource-counter">145<span class="cap">/200</span></div>
+    </div>
+
+    <!-- Crystal -->
+    <div class="resource-row crystal">
+      <img class="resource-icon" src="icons/crystal.png" alt="Crystal" width="24" height="24">
+      <div class="resource-info">
+        <span class="resource-name">Crystal</span>
+        <span class="resource-rate">from combat</span>
+        <div class="cap-bar-track"><div class="cap-bar-fill crystal" style="width:24%"></div></div>
+      </div>
+      <div class="resource-counter">12<span class="cap">/50</span></div>
+    </div>
+
+    <!-- Essence -->
+    <div class="resource-row essence">
+      <img class="resource-icon" src="icons/essence.png" alt="Essence" width="24" height="24">
+      <div class="resource-info">
+        <span class="resource-name">Essence</span>
+        <span class="resource-rate active">+0.1/s</span>
+        <div class="cap-bar-track"><div class="cap-bar-fill essence" style="width:47%"></div></div>
+      </div>
+      <div class="resource-counter">47<span class="cap">/100</span></div>
+    </div>
+
+    <div class="tooltip-hint">hover for breakdown · cap bars auto-update</div>
+  </div>
+
+  <!-- ═══ VARIANT 2: At-Cap State ═══ -->
+  <div class="variant-label">→ At-Cap State</div>
+
+  <div class="resources-section">
+    <div class="section-header">Resources</div>
+
+    <div class="resource-row stone at-cap">
+      <img class="resource-icon" src="icons/stone.png" alt="Stone" width="24" height="24">
+      <div class="resource-info">
+        <span class="resource-name">Stone</span>
+        <span class="resource-rate" style="color:#fbbf24">FULL — storage capped</span>
+        <div class="cap-bar-track"><div class="cap-bar-fill stone" style="width:100%"></div></div>
+      </div>
+      <div class="resource-counter">200<span class="cap">/200</span><span class="full">FULL</span></div>
+    </div>
+
+    <div class="resource-row crystal">
+      <img class="resource-icon" src="icons/crystal.png" alt="Crystal" width="24" height="24">
+      <div class="resource-info">
+        <span class="resource-name">Crystal</span>
+        <span class="resource-rate">from combat</span>
+        <div class="cap-bar-track"><div class="cap-bar-fill crystal" style="width:16%"></div></div>
+      </div>
+      <div class="resource-counter">8<span class="cap">/50</span></div>
+    </div>
+  </div>
+
+  <!-- ═══ VARIANT 3: Minimal (icon+count only) ═══ -->
+  <div class="variant-label">→ Minimal Variant (icon + count only)</div>
+
+  <div class="resources-section variant-minimal">
+    <div style="display:flex; gap:16px; justify-content:center; align-items:center; padding:4px 0;">
+      <div style="display:flex; align-items:center; gap:4px;">
+        <img src="icons/stone.png" width="20" height="20" style="image-rendering:pixelated">
+        <span style="color:var(--stone-color);font-weight:700;font-size:12px">145</span>
+      </div>
+      <div style="display:flex; align-items:center; gap:4px;">
+        <img src="icons/crystal.png" width="20" height="20" style="image-rendering:pixelated">
+        <span style="color:var(--crystal-color);font-weight:700;font-size:12px">12</span>
+      </div>
+      <div style="display:flex; align-items:center; gap:4px;">
+        <img src="icons/essence.png" width="20" height="20" style="image-rendering:pixelated">
+        <span style="color:var(--essence-color);font-weight:700;font-size:12px">47</span>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+</body>
+</html>
