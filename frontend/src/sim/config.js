@@ -48,10 +48,10 @@ export const RESOURCE = {
     dropAmount: 1,                // Crystal per successful standard drop
     bossDropAmount: 3,            // Crystal per boss kill
     drop: {
-      scout: 0.10,                // 10% — common, low per-unit reward
-      tank: 0.25,                 // 25% — tough enemy, higher reward
-      artillery: 0.30,            // 30% — dangerous, highest standard reward
-      crawler: 0.03,             // 3%  — swarm enemy, very low per-unit to prevent flooding
+      scout: 0.20,                // 20% — common, doubled from 10% to hit design-spec income targets (t_d4c8588c post-audit)
+      tank: 0.40,                 // 40% — tough enemy, high reward for high-threat kill
+      artillery: 0.45,            // 45% — dangerous priority target, highest standard reward
+      crawler: 0.05,             // 5%  — swarm enemy, very low per-unit to prevent flooding (raised from 3% for parity)
       boss: 1.0,                  // 100% — guaranteed
     },
   },
@@ -345,6 +345,24 @@ export const SWARM = {
   cap: 80,                      // max simultaneous crawlers on screen
   crawlerBounty: 1,             // bonus Stone per crawler kill
   jitter: 0.3,                  // per-tick random offset magnitude (cells)
+
+  // ── Swarm Creep — crawler escorts in late-game normal waves ──────
+  // Starting at wave 20, normal (non-swarm, non-boss) waves include a
+  // small crawler escort. This prevents late-game normal waves from
+  // feeling identical to early-game ones and gradually introduces the
+  // swarm mechanic for players doing extended runs.
+  // fraction: portion of the normal wave's enemy count converted to crawlers.
+  //   At 0.10, wave 22 (~26 enemies) gets 2-3 crawler escorts — flavor, not
+  //   a difficulty spike. Crawlers are subtracted proportionally from scouts.
+  // capPerWave: hard ceiling on creep crawlers. At wave 60 (~64 enemies),
+  //   without a cap 6-7 crawlers would spawn; capped at 5 to keep the
+  //   emphasis on the normal wave composition.
+  creep: {
+    enabled: true,              // master toggle for swarm creep
+    startWave: 20,              // first wave to add creep crawlers
+    fraction: 0.10,             // 10% of normal wave enemies become crawlers
+    capPerWave: 5,              // max creep crawlers per wave
+  },
 };
 
 /**

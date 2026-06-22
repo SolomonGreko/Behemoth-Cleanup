@@ -14,7 +14,7 @@
  *   - Storage upgrade cap changes
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
+
 import {
   canAfford,
   trySpend,
@@ -665,26 +665,26 @@ describe('edge cases', () => {
   });
 
   describe('drop probability distribution', () => {
-    it('scout drop at 10%', () => {
+    it('scout drop at 20%', () => {
       const chance = RESOURCE.crystal.drop.scout;
-      expect(chance).toBe(0.10);
+      expect(chance).toBe(0.20);
     });
 
-    it('crawler drop at 3% to prevent swarm flooding', () => {
+    it('crawler drop at 5% to prevent swarm flooding', () => {
       const chance = RESOURCE.crystal.drop.crawler;
-      expect(chance).toBe(0.03);
+      expect(chance).toBe(0.05);
       // Verify it's lower than scout (the most common enemy)
       expect(chance).toBeLessThan(RESOURCE.crystal.drop.scout);
     });
 
-    it('tank drop at 25%', () => {
+    it('tank drop at 40%', () => {
       const chance = RESOURCE.crystal.drop.tank;
-      expect(chance).toBe(0.25);
+      expect(chance).toBe(0.40);
     });
 
-    it('artillery drop at 30% — highest standard drop', () => {
+    it('artillery drop at 45% — highest standard drop', () => {
       const chance = RESOURCE.crystal.drop.artillery;
-      expect(chance).toBe(0.30);
+      expect(chance).toBe(0.45);
     });
 
     it('boss drop at 100% — guaranteed', () => {

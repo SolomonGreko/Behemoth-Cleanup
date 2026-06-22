@@ -17,7 +17,7 @@
  * @module engine
  */
 
-import { RESOURCE, COST, ECON, ENEMY, WAVE, SWARM, SCALING, BASE, DAY_CYCLE, BOT, LEVEL, ENEMY_CRAWLER } from './config.js';
+import { RESOURCE, COST, ECON, ENEMY, WAVE, SWARM, SCALING, BASE, DAY_CYCLE, BOT, LEVEL, WALL } from './config.js';
 import {
   addResources,
   buildResourceHUD,
@@ -476,6 +476,31 @@ function getWaveComposition(waveNum) {
   if (tanks > 0) groups.push({ type: 'tank', count: tanks });
   if (arty > 0) groups.push({ type: 'artillery', count: arty });
 
+  // --- SWARM CREEP injection (late-game crawler escorts) ---
+  if (
+    !bossWave && !swarmWave && !bossAndSwarm &&
+    SWARM.creep && SWARM.creep.enabled &&
+    waveNum >= SWARM.creep.startWave
+  ) {
+    const creepCount = Math.min(
+      Math.floor(actualCount * SWARM.creep.fraction),
+      SWARM.creep.capPerWave
+    );
+    if (creepCount > 0) {
+      // Subtract from scouts (the dominant enemy type) to keep total count stable
+      const scoutGroup = groups.find(g => g.type === 'scout');
+      if (scoutGroup) {
+        const removed = Math.min(scoutGroup.count, creepCount);
+        scoutGroup.count -= removed;
+        if (scoutGroup.count <= 0) {
+          groups.splice(groups.indexOf(scoutGroup), 1);
+        }
+      }
+      groups.push({ type: 'crawler', count: creepCount });
+    }
+  }
+  // --- END SWARM CREEP ---
+
   return groups;
 }
 
@@ -681,20 +706,9 @@ function tickEnemies(sim) {
         enemy.x += (dx / dist) * step;
         enemy.y += (dy / dist) * step;
 
-        // Crawler smooth jitter (lerp-based, replaces raw random teleport)
-        if (enemy.type === 'crawler') {
-          if (enemy._jitterX === undefined) {
-            enemy._jitterX = 0;
-            enemy._jitterY = 0;
-          }
-          const targetJitterX = (Math.random() - 0.5) * SWARM.jitter * 2;
-          const targetJitterY = (Math.random() - 0.5) * SWARM.jitter * 2;
-          const smooth = ENEMY_CRAWLER.jitterSmoothness;
-          enemy._jitterX += (targetJitterX - enemy._jitterX) * smooth;
-          enemy._jitterY += (targetJitterY - enemy._jitterY) * smooth;
-          enemy.x += enemy._jitterX;
-          enemy.y += enemy._jitterY;
-        }
+        // Crawler jitter is now visual-only — handled by render.js
+        // (direction-aware perpendicular sinusoidal wobble with trail VFX)
+        // AI behaviours can still set _jitterX/_jitterY for explicit overrides.
 
         // Check wall collision after movement
         const wall = findBlockingWall(sim, enemy);
@@ -815,7 +829,7 @@ function tickRepair(sim, bot, wall) {
   if (dist > wall.radius + 0.5) return; // not close enough yet
 
   // Repair the wall
-  const healAmount = 0.5; // WALL.repairRate per tick
+  const healAmount = WALL.repairRate;
   wall.hp = Math.min(wall.maxHp, wall.hp + healAmount);
 
   // If fully repaired, bot goes idle
@@ -834,6 +848,16 @@ function tickRepair(sim, bot, wall) {
  * @param {object} wall
  */
 function tickBuild(sim, bot, wall) {
+  // Safety: if wall is missing buildTicks (state corruption), abort build
+  if (!Number.isFinite(wall.buildTicks) || wall.buildTicks <= 0) {
+    wall.building = false;
+    wall.builderId = null;
+    wall.buildProgress = 0;
+    bot.state = 'IDLE';
+    bot.wallId = null;
+    return;
+  }
+
   const dist = Math.sqrt((bot.x - wall.x) ** 2 + (bot.y - wall.y) ** 2);
   if (dist > wall.radius + 0.5) return; // not close enough yet
 

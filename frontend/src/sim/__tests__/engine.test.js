@@ -7,14 +7,13 @@
  * Uses small worlds (10×10) for fast wave cycling.
  */
 
-import { describe, it, expect } from 'vitest';
 import {
   createSim,
   stepTick,
   getStats,
   getWavePreview,
 } from '../engine.js';
-import { BASE, WAVE, SWARM, DAY_CYCLE, BOT, ARTILLERY } from '../config.js';
+import { BASE, WAVE, SWARM, DAY_CYCLE, BOT, ARTILLERY, WALL } from '../config.js';
 import { findArtilleryTarget, tickArtilleryEnemy } from '../enemies.js';
 import { damageWall } from '../walls.js';
 
@@ -220,6 +219,116 @@ describe('engine — wave composition', () => {
     expect(sim.wave).toBe(20);
     expect(sim.swarmActive).toBe(false);
     expect(sim.waveComposition[0].type).toBe('boss');
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════
+// Swarm Creep — late-game crawler escorts (wave 20+)
+// ═══════════════════════════════════════════════════════════════════════
+
+describe('engine — swarm creep', () => {
+  it('creep does NOT fire for wave 19 (below startWave)', () => {
+    const sim = sim10x10();
+    runWavesUntil(sim, 19);
+    expect(sim.wave).toBe(19);
+    // Wave 19 is normal (not boss, not swarm) — no crawlers from creep
+    const crawlers = sim.waveComposition.find(g => g.type === 'crawler');
+    expect(crawlers).toBeUndefined();
+  });
+
+  it('creep does NOT fire for wave 20 (boss wave takes priority)', () => {
+    const sim = sim10x10();
+    runWavesUntil(sim, 20);
+    expect(sim.wave).toBe(20);
+    // Wave 20 is a boss wave — boss-only composition, no creep crawlers
+    expect(sim.waveComposition).toHaveLength(1);
+    expect(sim.waveComposition[0].type).toBe('boss');
+    expect(sim.waveComposition[0].count).toBe(1);
+  });
+
+  it('creep does NOT fire for wave 21 (swarm wave takes priority)', () => {
+    const sim = sim10x10();
+    runWavesUntil(sim, 21);
+    expect(sim.wave).toBe(21);
+    expect(sim.swarmActive).toBe(true);
+    // Swarm wave — pure crawlers, no creep mixed in
+    expect(sim.waveComposition).toHaveLength(1);
+    expect(sim.waveComposition[0].type).toBe('crawler');
+  });
+
+  it('creep fires for wave 22 (normal wave >= startWave)', () => {
+    const sim = sim10x10();
+    runWavesUntil(sim, 22);
+    expect(sim.wave).toBe(22);
+    expect(sim.swarmActive).toBe(false);
+    // Should have crawler group from creep
+    const crawlers = sim.waveComposition.find(g => g.type === 'crawler');
+    expect(crawlers).toBeDefined();
+    // Wave 22: baseCount = 5 + 21 = 26, actualCount = 26
+    // creepCount = floor(26 * 0.10) = 2
+    expect(crawlers.count).toBe(2);
+  });
+
+  it('creep crawlers replace scouts, total wave count unchanged', () => {
+    const sim = sim10x10();
+    runWavesUntil(sim, 22);
+    // Wave 22 normal composition: actualCount = 26 enemies
+    const total = sim.waveComposition.reduce((sum, g) => sum + g.count, 0);
+    // baseCount = 5 + 21 = 26, actualCount = 26
+    expect(total).toBe(26);
+    // Scouts should be reduced by 2 (the creep count)
+    const scouts = sim.waveComposition.find(g => g.type === 'scout');
+    expect(scouts).toBeDefined();
+    // With creep: original scout allocation was floor(26*(0.2+...)) ≈ 10-12
+    // After creep subtraction of 2: scouts should be 8-10
+    expect(scouts.count).toBeGreaterThan(0);
+    expect(scouts.count).toBeLessThan(26);
+  });
+
+  it('creep count = floor(baseCount * fraction), capped at 5', () => {
+    const sim = sim10x10();
+    runWavesUntil(sim, 22);
+    const crawlers = sim.waveComposition.find(g => g.type === 'crawler');
+    if (!crawlers) return; // safety
+    // wave 22: baseCount=26, fraction=0.10 → floor(2.6)=2
+    expect(crawlers.count).toBe(2);
+    expect(crawlers.count).toBeLessThanOrEqual(5);
+  });
+
+  it('SWARM.creep.enabled = false suppresses creep', () => {
+    const original = SWARM.creep.enabled;
+    SWARM.creep.enabled = false;
+    try {
+      const sim = sim10x10();
+      runWavesUntil(sim, 22);
+      expect(sim.wave).toBe(22);
+      // No crawler group — creep is disabled
+      const crawlers = sim.waveComposition.find(g => g.type === 'crawler');
+      expect(crawlers).toBeUndefined();
+    } finally {
+      SWARM.creep.enabled = original;
+    }
+  });
+
+  it('capPerWave = 5 respected when creep fraction would exceed it', () => {
+    const originalFraction = SWARM.creep.fraction;
+    SWARM.creep.fraction = 1.0; // force more than 5 creep crawlers
+    try {
+      const sim = sim10x10();
+      // Need a normal wave >= 20 that isn't boss or swarm
+      // Wave 23: 23%5=3 (not boss), 23%3=2 (not swarm) → normal
+      runWavesUntil(sim, 23);
+      expect(sim.wave).toBe(23);
+      expect(sim.swarmActive).toBe(false);
+      const crawlers = sim.waveComposition.find(g => g.type === 'crawler');
+      expect(crawlers).toBeDefined();
+      // baseCount = 5+22=27, actualCount=27, fraction=1.0 → floor(27)=27
+      // But capPerWave=5 should limit it
+      expect(crawlers.count).toBe(5);
+      expect(crawlers.count).toBeLessThanOrEqual(SWARM.creep.capPerWave);
+    } finally {
+      SWARM.creep.fraction = originalFraction;
+    }
   });
 });
 
@@ -643,6 +752,73 @@ describe('engine — artillery behavior', () => {
     // Should have fired at base, not the dead wall
     expect(baseDmg).toBe(ARTILLERY.attackDamage);
     expect(arty._artyTarget.type).toBe('base');
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════
+// engine — tickRepair uses WALL.repairRate (BUG-007 regression)
+// ═══════════════════════════════════════════════════════════════════════
+
+describe('engine — tickRepair WALL.repairRate (BUG-007)', () => {
+  it('repairs wall by WALL.repairRate HP per tick, not a hardcoded value', () => {
+    const sim = createSim({ worldWidth: 20, worldHeight: 20 });
+    // Remove the starting bot so labour doesn't double-assign repair
+    sim.bots = [];
+
+    // Add a wall at base center
+    const wall = {
+      id: 1, x: sim.baseCenter.x, y: sim.baseCenter.y,
+      hp: 10, maxHp: 30, alive: true,
+      radius: 1.0, level: 0, label: 'Barricade',
+      building: false, buildProgress: 0, builderId: null,
+      buildTicks: 1000,
+    };
+    sim.walls.push(wall);
+
+    // Add a bot at the wall, set to REPAIR state
+    const bot = {
+      id: 1, x: wall.x, y: wall.y,
+      speed: 0.04, state: 'REPAIR', wallId: wall.id,
+    };
+    sim.bots.push(bot);
+
+    // Step one tick — bot should repair the wall
+    stepTick(sim);
+
+    // Wall HP should increase by WALL.repairRate (config-driven)
+    expect(wall.hp).toBe(10 + WALL.repairRate);
+
+    // Verify it's actually the config value, not coincidentally 0.5
+    expect(WALL.repairRate).toBe(0.5); // canonical value
+    expect(wall.hp).toBe(10.5);
+  });
+
+  it('repair stops when wall reaches maxHp', () => {
+    const sim = createSim({ worldWidth: 20, worldHeight: 20 });
+    // Remove starting bot
+    sim.bots = [];
+
+    const wall = {
+      id: 1, x: sim.baseCenter.x, y: sim.baseCenter.y,
+      hp: 29.6, maxHp: 30, alive: true,
+      radius: 1.0, level: 0, label: 'Barricade',
+      building: false, buildProgress: 0, builderId: null,
+      buildTicks: 1000,
+    };
+    sim.walls.push(wall);
+
+    const bot = {
+      id: 1, x: wall.x, y: wall.y,
+      speed: 0.04, state: 'REPAIR', wallId: wall.id,
+    };
+    sim.bots.push(bot);
+
+    stepTick(sim);
+
+    // HP should be capped at maxHp (30), not 29.6 + 0.5 = 30.1
+    expect(wall.hp).toBe(30);
+    // Bot should go idle since wall is fully repaired
+    expect(bot.state).toBe('IDLE');
   });
 });
 

@@ -5,7 +5,7 @@
  * and bot harvest state machine end-to-end.
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
+
 import { initResourceState, resourceTick, applyStorageUpgrade } from '../engine.js';
 import { processCrystalDrop, validateDropTables, expectedCrystalPerKill } from '../enemies.js';
 import { RESOURCE, ECON } from '../config.js';
@@ -208,7 +208,7 @@ describe('engine — storage upgrades', () => {
 // ── Enemies: Crystal Drop Processing ────────────────────────────────
 
 describe('enemies — crystal drops', () => {
-  it('scout drops crystal at 10% when roll < 0.10', () => {
+  it('scout drops crystal at 20% when roll < 0.20', () => {
     const sim = createSim();
     const enemy = { type: 'scout', x: 10, y: 10 };
 
@@ -219,7 +219,7 @@ describe('enemies — crystal drops', () => {
     expect(sim.resources.crystal).toBe(1);
   });
 
-  it('scout does NOT drop crystal when roll >= 0.10', () => {
+  it('scout does NOT drop crystal when roll >= 0.20', () => {
     const sim = createSim();
     const enemy = { type: 'scout', x: 10, y: 10 };
 
@@ -239,20 +239,20 @@ describe('enemies — crystal drops', () => {
     expect(sim.resources.crystal).toBe(3);
   });
 
-  it('crawler drops at 3% — rare drop', () => {
+  it('crawler drops at 5% — rare drop', () => {
     const sim = createSim();
     const enemy = { type: 'crawler', x: 10, y: 10 };
 
-    const result = processCrystalDrop(sim, enemy, () => 0.01); // below 0.03
+    const result = processCrystalDrop(sim, enemy, () => 0.01); // below 0.05
     expect(result.dropped).toBe(true);
     expect(sim.resources.crystal).toBe(1);
   });
 
-  it('crawler does NOT drop at 3% when roll >= 0.03', () => {
+  it('crawler does NOT drop at 5% when roll >= 0.05', () => {
     const sim = createSim();
     const enemy = { type: 'crawler', x: 10, y: 10 };
 
-    const result = processCrystalDrop(sim, enemy, () => 0.04);
+    const result = processCrystalDrop(sim, enemy, () => 0.06);
     expect(result.dropped).toBe(false);
   });
 
@@ -261,7 +261,7 @@ describe('enemies — crystal drops', () => {
     sim.resources.crystal = 50; // at cap
     const enemy = { type: 'tank', x: 10, y: 10 };
 
-    const result = processCrystalDrop(sim, enemy, () => 0.10); // below 0.25
+    const result = processCrystalDrop(sim, enemy, () => 0.10); // below 0.40
     expect(result.dropped).toBe(true);
     expect(result.discarded).toBe(true);
     expect(sim.resources.crystal).toBe(50); // unchanged
@@ -278,10 +278,10 @@ describe('enemies — crystal drops', () => {
 
   it('returns expected crystal per kill for each type', () => {
     // Expected = dropChance * dropAmount
-    expect(expectedCrystalPerKill('scout')).toBeCloseTo(0.10 * 1, 2);   // 0.10
-    expect(expectedCrystalPerKill('tank')).toBeCloseTo(0.25 * 1, 2);    // 0.25
-    expect(expectedCrystalPerKill('artillery')).toBeCloseTo(0.30 * 1, 2); // 0.30
-    expect(expectedCrystalPerKill('crawler')).toBeCloseTo(0.03 * 1, 2);  // 0.03
+    expect(expectedCrystalPerKill('scout')).toBeCloseTo(0.20 * 1, 2);   // 0.20
+    expect(expectedCrystalPerKill('tank')).toBeCloseTo(0.40 * 1, 2);    // 0.40
+    expect(expectedCrystalPerKill('artillery')).toBeCloseTo(0.45 * 1, 2); // 0.45
+    expect(expectedCrystalPerKill('crawler')).toBeCloseTo(0.05 * 1, 2);  // 0.05
     expect(expectedCrystalPerKill('boss')).toBe(3.0);                     // 3.0
   });
 });
@@ -309,16 +309,19 @@ describe('enemies — drop table validation', () => {
 
 describe('engine — wave crystal estimates', () => {
   it('estimates ~9-11 crystal per 5-wave boss cycle', () => {
-    // Wave composition matching the balance spec target of ~9-11 per cycle
-    // ~6-8 from standard enemies + 3 from boss
+    // 5-wave boss cycle composition: waves 1-5 actual spawn counts
+    // Target: ~9-11 Crystal per cycle (resource_mechanics.md)
     const waves = [
-      { type: 'scout', count: 12 },       // 1.2 expected
-      { type: 'tank', count: 6 },         // 1.5 expected
-      { type: 'crawler', count: 20 },     // 0.6 expected (low per-unit prevents flooding)
-      { type: 'artillery', count: 4 },    // 1.2 expected
-      { type: 'scout', count: 14 },       // 1.4 expected
-      { type: 'tank', count: 4 },         // 1.0 expected
-      { type: 'boss', count: 1 },         // 3.0 expected (guaranteed)
+      { type: 'scout', count: 5 },        // wave 1: 5 scouts
+      { type: 'scout', count: 4 },        // wave 2: mixed
+      { type: 'tank', count: 2 },
+      { type: 'crawler', count: 18 },     // wave 3: swarm (~18 crawlers)
+      { type: 'scout', count: 5 },        // wave 4: mixed
+      { type: 'tank', count: 2 },
+      { type: 'artillery', count: 1 },
+      { type: 'boss', count: 1 },         // wave 5: boss
+      { type: 'scout', count: 3 },
+      { type: 'tank', count: 2 },
     ];
 
     let total = 0;
@@ -326,7 +329,10 @@ describe('engine — wave crystal estimates', () => {
       total += expectedCrystalPerKill(type) * count;
     }
 
-    // Expected: 1.2+1.5+0.6+1.2+1.4+1.0+3.0 = 9.9
+    // Expected with new rates (scout 20%, tank 40%, arty 45%, crawler 5%):
+    // 5×0.20 + 4×0.20 + 2×0.40 + 18×0.05 + 5×0.20 + 2×0.40 + 1×0.45 = 1.0+0.8+0.8+0.9+1.0+0.8+0.45 = 5.75
+    // + boss (3.0) + 3×0.20 + 2×0.40 = 3.0+0.6+0.8 = 4.4
+    // Total = 5.75 + 4.4 = 10.15
     expect(total).toBeGreaterThanOrEqual(9);
     expect(total).toBeLessThanOrEqual(11);
   });
