@@ -939,8 +939,18 @@ function drawDotShape(ctx, cx, cy, r, color, type, tick) {
  * Rendered with a filled interior at low opacity, a bright stroke, and
  * a thin outer ring — reads as commanding, ominous, the center of
  * attention.
+ *
+ * When enraged: brighter fill, thicker stroke, and a second pulsing
+ * outer ring — the star itself radiates threat.
+ *
+ * @param {CanvasRenderingContext2D} ctx
+ * @param {number} cx — center x in pixels
+ * @param {number} cy — center y in pixels
+ * @param {number} r — radius in pixels
+ * @param {string} color — hex color for the star
+ * @param {boolean} [enraged=false] — whether the boss is enraged
  */
-function drawPentagramShape(ctx, cx, cy, r, color) {
+function drawPentagramShape(ctx, cx, cy, r, color, enraged = false) {
   const points = 5;
   const outerR = r * 0.85;
   const innerR = outerR * 0.4;
@@ -958,20 +968,151 @@ function drawPentagramShape(ctx, cx, cy, r, color) {
   ctx.closePath();
 
   // Fill
-  ctx.fillStyle = hexToRgba(color, 0.2);
+  ctx.fillStyle = hexToRgba(color, enraged ? 0.35 : 0.2);
   ctx.fill();
 
   // Stroke
-  ctx.strokeStyle = color;
-  ctx.lineWidth = Math.max(1.5, r * 0.12);
+  ctx.strokeStyle = enraged ? '#fbbf24' : color; // gold-amber when enraged
+  ctx.lineWidth = Math.max(1.5, r * (enraged ? 0.18 : 0.12));
   ctx.stroke();
 
   // Outer ring
   ctx.beginPath();
   ctx.arc(cx, cy, outerR * 1.2, 0, Math.PI * 2);
-  ctx.strokeStyle = hexToRgba(color, 0.35);
-  ctx.lineWidth = Math.max(0.5, r * 0.05);
+  ctx.strokeStyle = hexToRgba(color, enraged ? 0.55 : 0.35);
+  ctx.lineWidth = Math.max(0.5, r * (enraged ? 0.08 : 0.05));
   ctx.stroke();
+
+  // Enraged: second outer ring (pulse feel)
+  if (enraged) {
+    ctx.beginPath();
+    ctx.arc(cx, cy, outerR * 1.35, 0, Math.PI * 2);
+    ctx.strokeStyle = hexToRgba('#f472b6', 0.3); // rose
+    ctx.lineWidth = Math.max(0.5, r * 0.04);
+    ctx.stroke();
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// BOSS ENRAGE PARTICLES
+// ═══════════════════════════════════════════════════════════════════════
+
+/**
+ * Draw floating particle emanation around an enraged boss.
+ *
+ * Small rose/gold dots drift outward from the boss perimeter in a
+ * circular orbit, fading as they travel. Particles are seeded
+ * deterministically per tick so they don't jitter randomly.
+ *
+ * @param {CanvasRenderingContext2D} ctx
+ * @param {number} sx — boss center x in pixels
+ * @param {number} sy — boss center y in pixels
+ * @param {number} r — boss radius in pixels
+ * @param {number} tick — current sim tick
+ */
+function drawEnrageParticles(ctx, sx, sy, r, tick) {
+  const particleCount = 8;
+  const orbitR = r * 1.3; // start at edge of outer ring
+  const driftSpeed = 0.06; // pixels of outward drift per tick
+
+  for (let i = 0; i < particleCount; i++) {
+    // Deterministic per-particle angle: rotates slowly, drifts outward
+    const baseAngle = (i / particleCount) * Math.PI * 2;
+    const rotateSpeed = 0.04; // rad/tick
+    const angle = baseAngle + tick * rotateSpeed;
+
+    // Outward drift: particles cycle every 20 ticks
+    const cycle = (tick + i * 7) % 20;
+    const lifeRatio = cycle / 20;
+    const dist = orbitR + lifeRatio * r * 0.8;
+    const alpha = (1 - lifeRatio) * 0.5; // 0.5 → 0
+
+    if (alpha < 0.02) continue;
+
+    const px = sx + Math.cos(angle) * dist;
+    const py = sy + Math.sin(angle) * dist;
+    const pr = 1.2 + (1 - lifeRatio) * 1.5; // shrinks as it drifts
+
+    // Glow core
+    ctx.save();
+    ctx.shadowColor = '#f472b6';
+    ctx.shadowBlur = pr * 2;
+    ctx.fillStyle = hexToRgba('#fbbf24', alpha); // gold
+    ctx.beginPath();
+    ctx.arc(px, py, pr, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+
+    // Bright center
+    ctx.fillStyle = hexToRgba('#ffffff', alpha * 0.4);
+    ctx.beginPath();
+    ctx.arc(px, py, pr * 0.4, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// BOSS SHOCKWAVE VFX DRAWING
+// ═══════════════════════════════════════════════════════════════════════
+
+/**
+ * Draw active boss shockwave expanding rings.
+ *
+ * Called after drawDeathParticles, before any fog pass. Each ring
+ * expands from 0 → 3 cells over SHOCKWAVE_LIFE ticks (30 ticks ~ 0.5s),
+ * fading from alpha 0.6 → 0. Color: cyan #22d3ee.
+ *
+ * @param {CanvasRenderingContext2D} ctx
+ * @param {number} scale — pixels per cell
+ * @param {number} tick — current sim tick
+ */
+export function drawBossShockwaves(ctx, scale, tick) {
+  // Prune expired shockwaves
+  for (const [id, sw] of bossShockwaves) {
+    if (tick - sw.bornTick > BOSS_SHOCKWAVE_LIFE) {
+      bossShockwaves.delete(id);
+    }
+  }
+
+  for (const [, sw] of bossShockwaves) {
+    const age = tick - sw.bornTick;
+    const lifeRatio = age / BOSS_SHOCKWAVE_LIFE; // 0 → 1
+    const sx = sw.x * scale;
+    const sy = sw.y * scale;
+
+    // Ring expands from 0 to 3.0 cells
+    const maxRadius = 3.0 * scale;
+    const ringRadius = lifeRatio * maxRadius;
+    // Alpha: 0.6 → 0
+    const ringAlpha = (1 - lifeRatio) * 0.6;
+
+    if (ringAlpha < 0.01) continue;
+
+    ctx.save();
+    ctx.shadowColor = '#22d3ee';
+    ctx.shadowBlur = ringRadius * 0.15;
+
+    // Main ring stroke
+    ctx.beginPath();
+    ctx.arc(sx, sy, ringRadius, 0, Math.PI * 2);
+    ctx.strokeStyle = hexToRgba('#22d3ee', ringAlpha);
+    ctx.lineWidth = Math.max(1.5, (1 - lifeRatio) * 4);
+    ctx.stroke();
+
+    // Inner bright core ring (thinner, brighter)
+    const innerAlpha = ringAlpha * 0.7;
+    if (innerAlpha > 0.02) {
+      ctx.beginPath();
+      ctx.arc(sx, sy, ringRadius * 0.95, 0, Math.PI * 2);
+      ctx.strokeStyle = hexToRgba('#67e8f9', innerAlpha);
+      ctx.lineWidth = Math.max(0.8, (1 - lifeRatio) * 1.5);
+      ctx.stroke();
+    }
+
+    ctx.shadowBlur = 0;
+    ctx.restore();
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════════════

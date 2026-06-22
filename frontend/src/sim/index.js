@@ -123,6 +123,7 @@ export {
   drawBase,
   drawEnemies,
   drawDeathParticles,
+  drawBossShockwaves,
   drawTurrets,
   drawBots,
   drawWalls,
