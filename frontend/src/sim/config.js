@@ -136,6 +136,7 @@ export const ECON = {
 export const BOT = {
   speed: 0.015,          // cells per tick (75% of scout 0.02 — slower = must defend bots)
   size: 0.6,             // cell radius for rendering
+  carry: 12,             // stone per harvest trip (was 10 — reduced trips to free bots sooner)
   maxBots: 12,           // hard cap — prevents bot-spam economy
   startingBots: 1,       // free bot at game start
 };
@@ -303,6 +304,7 @@ export const SCALING = {
   SPEED_SCALE: 0.015,
   DAMAGE_SCALE: 0.01,
   CRYSTAL_DROP_SCALE: 0.05,
+  STEEL_SCALE: 0.08,        // kill-steel multiplier growth per wave (was 0.10)
   HP_CAP: 10.0,
 };
 
@@ -326,6 +328,34 @@ export const WAVE = {
   spawnCountGrowth: 1,          // +1 enemy per wave number
 
   bossInterval: 5,              // boss every 5 waves
+
+  // ── Per-wave enemy counts [scouts, tanks, artillery, bosses] ──────
+  // Design: 5-act structure. Bosses at waves 10, 15, 20 only.
+  // Schema: each entry is [scouts, tanks, artillery, bosses].
+  // NOTE: engine currently generates waves via baseSpawnCount formula;
+  // WAVE.COUNTS is provided for future getWaveCounts() consumption.
+  COUNTS: {
+    1:  [3, 0, 0, 0],
+    2:  [4, 0, 0, 0],
+    3:  [5, 0, 0, 0],
+    4:  [5, 1, 0, 0],
+    5:  [6, 1, 0, 0],
+    6:  [4, 2, 0, 0],
+    7:  [5, 2, 0, 0],
+    8:  [4, 2, 1, 0],
+    9:  [5, 3, 1, 0],
+    10: [3, 2, 2, 2],
+    11: [6, 3, 1, 0],
+    12: [4, 4, 2, 0],
+    13: [5, 4, 2, 0],
+    14: [5, 4, 3, 0],
+    15: [3, 3, 2, 3],
+    16: [6, 5, 3, 0],
+    17: [5, 5, 4, 0],
+    18: [6, 5, 4, 0],
+    19: [7, 5, 4, 0],
+    20: [4, 4, 3, 4],
+  },
 };
 
 /**
@@ -436,6 +466,7 @@ export const TURRET = {
  * when within repairRange of a damaged wall segment.
  */
 export const WALL = {
+  cost: 8,                 // stone cost to build one wall segment (was 10)
   levels: [
     { hp: 30, buildTicks: 180, radius: 0.8, label: 'Barricade' },     // L1
     { hp: 60, buildTicks: 300, radius: 0.9, label: 'Reinforced' },     // L2
@@ -460,6 +491,7 @@ export const BASE = {
   hp: 120,          // maximum base HP
   startingHp: 120,  // HP at game start
   radius: 1.5,      // base radius in cells
+  steelPerTick: 0.009, // passive steel income per tick (0.54/s at 60fps)
 };
 
 /**
