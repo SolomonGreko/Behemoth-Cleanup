@@ -9,7 +9,7 @@
 
 import React from 'react';
 import { ResourceHUD, BotLabourHUD } from './ResourceHUD.jsx';
-import { getWavePreview, DAY_CYCLE } from '../sim/index.js';
+import { getWavePreview, DAY_CYCLE, LEVEL, toggleSound } from '../sim/index.js';
 
 // ═══════════════════════════════════════════════════════════════════════
 // ENEMY TYPE STYLING
@@ -27,6 +27,22 @@ const ENEMY_TYPE_STYLE = {
   crawler:   { color: '#34d399', icon: '\u224b', label: 'Crawler' },
   boss:      { color: '#c084fc', icon: '\u2b21', label: 'Boss' },
 };
+
+// ═══════════════════════════════════════════════════════════════════════
+// BASE LEVEL IDENTITY
+// ═══════════════════════════════════════════════════════════════════════
+
+/**
+ * Per-level identity names matching Athena's green→cyan→amber→red spec.
+ * Makes each level feel earned, not spreadsheet-cold.
+ * Coordinates with LEVEL.VISUAL glowColor/labelColor from config.js.
+ */
+const LEVEL_IDENTITY = [
+  { title: 'OUTPOST',  desc: 'A spark in the dark' },
+  { title: 'BASTION',  desc: 'Roots take hold' },
+  { title: 'FORTRESS', desc: 'The Shroud recoils' },
+  { title: 'BEHEMOTH', desc: 'Awakened' },
+];
 
 // ═══════════════════════════════════════════════════════════════════════
 // WAVE PREVIEW PANEL
@@ -146,6 +162,12 @@ export function BehemothGame({ sim }) {
 
         {/* Wave counter */}
         <WaveCounter sim={sim} />
+
+        {/* Base level badge — visually distinct per-level styling */}
+        <BaseLevelBadge hud={sim.hud} />
+
+        {/* Sound mute/unmute toggle */}
+        <SoundToggle sim={sim} />
       </div>
     </div>
   );
@@ -278,6 +300,187 @@ function WaveCounter({ sim }) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
+// SOUND TOGGLE BUTTON
+// ═══════════════════════════════════════════════════════════════════════
+
+/**
+ * SoundToggle — mute/unmute speaker icon button.
+ *
+ * Reads sim.soundEnabled for visual state and calls toggleSound()
+ * on click. Icon switches between 🔊 (on, full opacity) and
+ * 🔇 (muted, 45% opacity). Uses local state for immediate visual
+ * feedback; syncs from sim on parent re-render.
+ *
+ * @param {object} props
+ * @param {object} props.sim — live sim state (must have .soundEnabled)
+ */
+function SoundToggle({ sim }) {
+  const [enabled, setEnabled] = React.useState(() => sim.soundEnabled);
+
+  // Sync from sim when parent re-renders (e.g. after M hotkey toggle)
+  React.useEffect(() => {
+    setEnabled(sim.soundEnabled);
+  }, [sim.soundEnabled]);
+
+  const handleClick = () => {
+    toggleSound(sim);
+    setEnabled(sim.soundEnabled);
+  };
+
+  return (
+    <button
+      onClick={handleClick}
+      style={styles.soundToggle}
+      title={enabled ? 'Mute sound (M)' : 'Unmute sound (M)'}
+      aria-label={enabled ? 'Mute sound' : 'Unmute sound'}
+      role="switch"
+      aria-checked={enabled}
+    >
+      <span
+        style={{
+          ...styles.soundIcon,
+          opacity: enabled ? 1 : 0.45,
+        }}
+      >
+        {enabled ? '\uD83D\uDD0A' : '\uD83D\uDD07'}
+      </span>
+    </button>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// BASE LEVEL BADGE
+// ═══════════════════════════════════════════════════════════════════════
+
+/**
+ * BaseLevelBadge — visually distinct base level indicator.
+ *
+ * Replaces the old "LV.N" text pattern with a badge that communicates
+ * level identity through color, typography, glow, and a kill progress bar.
+ * Reads baseLevel from sim.hud — updates instantly on level-up.
+ *
+ * Styling coordinates with LEVEL.VISUAL from Athena's spec:
+ *   L1 green  #22c55e → L2 cyan #06b6d4 → L3 amber #f59e0b → L4 red #ef4444
+ *
+ * Design:
+ *   - Left-edge colored accent strip (glow color, pulses at L4)
+ *   - Large level number with glow text-shadow
+ *   - Identity title in level labelColor + atmospheric subtitle
+ *   - Kill progress bar (L1–L3) or MAX status (L4)
+ *
+ * L4 (BEHEMOTH) gets a pulsing glow animation matching the renderer's
+ * ~2Hz sin wave — same frequency, shared visual language.
+ *
+ * @param {object} props
+ * @param {object} props.hud — sim.hud snapshot from engine buildHUD()
+ */
+function BaseLevelBadge({ hud }) {
+  if (!hud) return null;
+
+  const level = hud.baseLevel ?? 0;
+  const kills = hud.kills ?? 0;
+  const visual = LEVEL.VISUAL[level] || LEVEL.VISUAL[0];
+  const identity = LEVEL_IDENTITY[level] || LEVEL_IDENTITY[0];
+  const isMaxLevel = level >= LEVEL.THRESHOLDS.length - 1;
+
+  // Progress toward next threshold
+  const nextThreshold = isMaxLevel
+    ? LEVEL.THRESHOLDS[level]
+    : LEVEL.THRESHOLDS[level + 1];
+  const prevThreshold = LEVEL.THRESHOLDS[level];
+  const range = nextThreshold - prevThreshold;
+  const progress = range > 0
+    ? Math.min(1, Math.max(0, (kills - prevThreshold) / range))
+    : 1;
+
+  // Unique animation name to avoid collision with other keyframes
+  const pulseAnim = `bl-pulse-L${level}`;
+
+  return (
+    <div
+      style={{
+        ...styles.baseLevelContainer,
+        borderColor: `${visual.glowColor}44`,
+        boxShadow: isMaxLevel
+          ? 'none'
+          : `inset 0 0 20px ${visual.glowColor}11`,
+      }}
+      role="region"
+      aria-label={`Base Level ${level + 1}: ${identity.title}`}
+    >
+      {/* L4 pulse keyframes — only injected when at max level */}
+      {isMaxLevel && (
+        <style>{`
+          @keyframes ${pulseAnim} {
+            0%, 100% { box-shadow: 0 0 6px ${visual.glowColor}55, inset 0 0 12px ${visual.glowColor}18; }
+            50%      { box-shadow: 0 0 14px ${visual.glowColor}88, inset 0 0 22px ${visual.glowColor}2a; }
+          }
+        `}</style>
+      )}
+
+      {/* Accent bar — left edge glow strip, pulses at L4 */}
+      <div
+        style={{
+          ...styles.baseLevelAccent,
+          background: visual.glowColor,
+          boxShadow: `0 0 8px ${visual.glowColor}`,
+          ...(isMaxLevel
+            ? { animation: `${pulseAnim} 2s ease-in-out infinite` }
+            : {}),
+        }}
+      />
+
+      {/* Level number + identity title */}
+      <div style={styles.baseLevelHeader}>
+        <span
+          style={{
+            ...styles.baseLevelNumber,
+            color: visual.glowColor,
+            textShadow: `0 0 ${8 + level * 4}px ${visual.glowColor}88`,
+          }}
+        >
+          {level + 1}
+        </span>
+        <div style={styles.baseLevelTitleGroup}>
+          <span style={{ ...styles.baseLevelTitle, color: visual.labelColor }}>
+            {identity.title}
+          </span>
+          <span style={styles.baseLevelDesc}>{identity.desc}</span>
+        </div>
+      </div>
+
+      {/* Kill progress (L1–L3) or MAX status (L4) */}
+      {!isMaxLevel && (
+        <div style={styles.baseLevelProgress}>
+          <div style={styles.baseLevelBarTrack}>
+            <div
+              style={{
+                ...styles.baseLevelBarFill,
+                width: `${progress * 100}%`,
+                background: visual.glowColor,
+                boxShadow: `0 0 6px ${visual.glowColor}66`,
+              }}
+            />
+          </div>
+          <span style={styles.baseLevelProgressText}>
+            {kills}/{nextThreshold}
+          </span>
+        </div>
+      )}
+
+      {isMaxLevel && (
+        <div style={styles.baseLevelMaxRow}>
+          <span style={{ ...styles.baseLevelMaxText, color: visual.glowColor }}>
+            {'\u25c6'} MAX
+          </span>
+          <span style={styles.baseLevelKills}>{kills} kills</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════
 // STYLES
 // ═══════════════════════════════════════════════════════════════════════
 
@@ -377,6 +580,138 @@ const styles = {
     fontSize: '22px',
     color: '#FBBF24',   // amber-400
     fontWeight: 'bold',
+    fontVariantNumeric: 'tabular-nums',
+  },
+
+  // ── Sound Toggle ────────────────────────────────────────────────
+
+  soundToggle: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: '32px',
+    height: '28px',
+    padding: 0,
+    background: 'rgba(0, 0, 0, 0.5)',
+    border: '1px solid rgba(255, 255, 255, 0.1)',
+    borderRadius: '6px',
+    cursor: 'pointer',
+    transition: 'border-color 0.2s, background 0.2s',
+    alignSelf: 'flex-end',
+  },
+
+  soundIcon: {
+    fontSize: '15px',
+    lineHeight: 1,
+    transition: 'opacity 0.15s',
+  },
+
+  // ── Base Level Badge ────────────────────────────────────────────
+
+  baseLevelContainer: {
+    position: 'relative',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '6px',
+    padding: '10px 12px 10px 16px',
+    background: 'rgba(0, 0, 0, 0.75)',
+    borderRadius: '8px',
+    border: '1px solid rgba(255, 255, 255, 0.1)',
+    fontFamily: "'Courier New', monospace",
+    userSelect: 'none',
+    minWidth: '180px',
+    overflow: 'hidden',
+  },
+
+  baseLevelAccent: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    bottom: 0,
+    width: '3px',
+    borderRadius: '8px 0 0 8px',
+  },
+
+  baseLevelHeader: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '10px',
+  },
+
+  baseLevelNumber: {
+    fontSize: '26px',
+    fontWeight: 'bold',
+    fontVariantNumeric: 'tabular-nums',
+    lineHeight: 1,
+    flexShrink: 0,
+    minWidth: '28px',
+    textAlign: 'center',
+  },
+
+  baseLevelTitleGroup: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '1px',
+  },
+
+  baseLevelTitle: {
+    fontSize: '13px',
+    fontWeight: 'bold',
+    letterSpacing: '3px',
+    textTransform: 'uppercase',
+    lineHeight: 1.2,
+  },
+
+  baseLevelDesc: {
+    fontSize: '9px',
+    color: '#888888',
+    fontStyle: 'italic',
+    lineHeight: 1.3,
+  },
+
+  baseLevelProgress: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+  },
+
+  baseLevelBarTrack: {
+    flex: 1,
+    height: '3px',
+    background: 'rgba(255, 255, 255, 0.08)',
+    borderRadius: '2px',
+    overflow: 'hidden',
+  },
+
+  baseLevelBarFill: {
+    height: '100%',
+    borderRadius: '2px',
+    transition: 'width 0.4s ease, background 0.4s ease',
+  },
+
+  baseLevelProgressText: {
+    fontSize: '9px',
+    color: '#a1a1aa',
+    fontVariantNumeric: 'tabular-nums',
+    whiteSpace: 'nowrap',
+    flexShrink: 0,
+  },
+
+  baseLevelMaxRow: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+
+  baseLevelMaxText: {
+    fontSize: '11px',
+    fontWeight: 'bold',
+    letterSpacing: '2px',
+  },
+
+  baseLevelKills: {
+    fontSize: '9px',
+    color: '#a1a1aa',
     fontVariantNumeric: 'tabular-nums',
   },
 

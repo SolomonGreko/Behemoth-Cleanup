@@ -14,7 +14,7 @@ import {
   getStats,
   getWavePreview,
 } from '../engine.js';
-import { BASE, WAVE, SWARM, DAY_CYCLE } from '../config.js';
+import { BASE, WAVE, SWARM, DAY_CYCLE, BOT } from '../config.js';
 
 // ═══════════════════════════════════════════════════════════════════════
 // createSim
@@ -69,12 +69,14 @@ describe('engine — createSim', () => {
     expect(sim.spawnPoints[3]).toEqual({ x: 25, y: 49 });
   });
 
-  it('initializes empty entity arrays', () => {
+  it('initializes entity arrays with starting state', () => {
     const sim = createSim();
     expect(sim.enemies).toEqual([]);
-    expect(sim.bots).toEqual([]);
+    expect(sim.bots.length).toBe(BOT.startingBots);   // one free bot at start
+    expect(sim.bots[0]).toMatchObject({ state: 'IDLE', carryingStone: 0 });
     expect(sim.turrets).toEqual([]);
     expect(sim.walls).toEqual([]);
+    expect(sim.stoneZones.length).toBeGreaterThan(0);  // stone zones generated
   });
 
   it('initializes resources from ECON', () => {

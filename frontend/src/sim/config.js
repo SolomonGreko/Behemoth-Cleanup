@@ -113,6 +113,24 @@ export const ECON = {
   startingEssence: 0,
 };
 
+/**
+ * BOT — worker bot intrinsics.
+ *
+ * Worker bots (Chime-Forged) harvest Stone from terrain zones. They move
+ * at moderate speed (half of scout), carry one Stone per cycle, and
+ * retreat rather than fight. Max count prevents bot-spam economy.
+ *
+ * Default values produce day-one gameplay: one starting bot yields ~1
+ * Stone every ~3 seconds accounting for round-trip travel time to the
+ * nearest zone cluster.
+ */
+export const BOT = {
+  speed: 0.025,          // cells per tick (scouts are 0.02, so bots are slightly faster)
+  size: 0.6,             // cell radius for rendering
+  maxBots: 12,           // hard cap — prevents bot-spam economy
+  startingBots: 1,       // free bot at game start
+};
+
 // ═══════════════════════════════════════════════════════════════════════
 // GAME ENTITY CONFIG
 // ═══════════════════════════════════════════════════════════════════════
@@ -137,6 +155,32 @@ export const ENEMY = {
   artillery: { hp: 12, speed: 0.008, damage: 8, size: 1.0, type: 'artillery' },
   crawler:   { hp: 3,  speed: 0.024, damage: 0.6, size: 0.4, type: 'crawler' },
   boss:      { hp: 80, speed: 0.008, damage: 20, size: 2.0, type: 'boss' },
+};
+
+/**
+ * SCALING — wave-based enemy stat scaling multipliers.
+ *
+ * Each wave increases enemy stats multiplicatively from their base values.
+ * Scaling is linear with wave number: scaled = base * (1 + SCALE * (wave - 1)).
+ *
+ * HP is capped at base * HP_CAP to prevent infinite growth.
+ * Speed and damage have no cap by default (linear growth).
+ * Crystal drop chance scales multiplicatively on the base drop probability.
+ *
+ * HP_SCALE  0.06: wave 10 scout HP = 8 * (1 + 0.06 * 9) = 12.3
+ *                wave 20 scout HP = 8 * (1 + 0.06 * 19) = 17.1 → not yet at cap
+ *                wave 50 scout HP = 8 * (1 + 0.06 * 49) = 31.5 → capped at 8 * 10 = 80
+ *
+ * SPEED_SCALE 0.015: mild speed creep — wave 20 scouts ~28% faster than wave 1
+ * DAMAGE_SCALE 0.01: minor damage creep — wave 20 enemies do ~19% more base damage
+ * CRYSTAL_DROP_SCALE 0.05: +5% per wave — wave 10 scout drop = 10% * (1 + 0.05 * 9) = 14.5%
+ */
+export const SCALING = {
+  HP_SCALE: 0.06,
+  SPEED_SCALE: 0.015,
+  DAMAGE_SCALE: 0.01,
+  CRYSTAL_DROP_SCALE: 0.05,
+  HP_CAP: 10.0,
 };
 
 /**
@@ -191,10 +235,10 @@ export const LEVEL = {
   THRESHOLDS: [0, 25, 75, 140],  // cumulative kills to reach each level
 
   BONUSES: [
-    { hpMul: 1.0, steelMul: 1.0, radiusMul: 1.0 },   // L1 — base stats
-    { hpMul: 1.25, steelMul: 1.4, radiusMul: 1.2 },   // L2 — 25 kills
-    { hpMul: 1.6, steelMul: 1.9, radiusMul: 1.4 },     // L3 — 75 kills
-    { hpMul: 2.0, steelMul: 2.5, radiusMul: 1.6 },     // L4 — 140 kills
+    { hpMul: 1.0, essenceMul: 1.0, radiusMul: 1.0 },   // L1 — base stats
+    { hpMul: 1.25, essenceMul: 1.4, radiusMul: 1.2 },   // L2 — 25 kills
+    { hpMul: 1.6, essenceMul: 1.9, radiusMul: 1.4 },     // L3 — 75 kills
+    { hpMul: 2.0, essenceMul: 2.5, radiusMul: 1.6 },     // L4 — 140 kills
   ],
 
   SHIELD_HP: [0, 15, 30, 50],      // shield maxHP per level (L1–L4)

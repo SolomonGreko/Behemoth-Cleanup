@@ -11,6 +11,7 @@
 
 import { RESOURCE } from './config.js';
 import { trySpend } from './resource.js';
+import { processCrystalDrop } from './enemies.js';
 
 // ── Ability Definitions ─────────────────────────────────────────────
 
@@ -112,7 +113,7 @@ function applyPulseWave(sim) {
   if (!sim.enemies) return;
 
   for (const enemy of sim.enemies) {
-    if (enemy.hp <= 0) continue;
+    if (!enemy.alive || enemy.hp <= 0) continue;
 
     const dx = enemy.x - centerX;
     const dy = enemy.y - centerY;
@@ -122,8 +123,10 @@ function applyPulseWave(sim) {
       enemy.hp -= damage;
       if (enemy.hp <= 0) {
         enemy.hp = 0;
-        // Enemy death processing (including Crystal drops) handled by
-        // the main enemy death handler
+        enemy.alive = false;
+        sim.kills++;
+        sim.waveEnemiesRemaining--;
+        processCrystalDrop(sim, enemy);
       }
     }
   }

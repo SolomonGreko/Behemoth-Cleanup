@@ -8,7 +8,7 @@
  * Drop is immediate — Crystal is credited on the same tick the enemy dies.
  */
 
-import { RESOURCE } from './config.js';
+import { RESOURCE, SCALING } from './config.js';
 import { addResources } from './resource.js';
 
 /**
@@ -39,7 +39,7 @@ export const ENEMY_TYPES = {
  *   Used by the renderer to show "+1 Crystal" or "Storage Full" animation.
  */
 export function processCrystalDrop(sim, enemy, randomFn = Math.random) {
-  const { type } = enemy;
+  const { type, wave } = enemy;
 
   // Determine drop chance and amount
   let dropChance;
@@ -55,6 +55,12 @@ export function processCrystalDrop(sim, enemy, randomFn = Math.random) {
       return { dropped: false, amount: 0, discarded: false };
     }
     dropAmount = RESOURCE.crystal.dropAmount;       // 1
+  }
+
+  // Apply wave-based crystal drop scaling: scaled = base * (1 + SCALE * (wave - 1))
+  if (wave != null && wave > 0) {
+    const dropScale = 1 + SCALING.CRYSTAL_DROP_SCALE * (wave - 1);
+    dropChance *= dropScale;
   }
 
   // Roll for drop

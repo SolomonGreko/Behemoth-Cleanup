@@ -714,3 +714,193 @@ function drawTurret(ctx, turret, scale) {
   // ── Health bar ──────────────────────────────────────────────────
   drawHealthBar(ctx, sx, sy, turret.hp, turret.maxHp, 0.7, scale);
 }
+
+// ═══════════════════════════════════════════════════════════════════════
+// WALL DRAWING
+// ═══════════════════════════════════════════════════════════════════════
+
+/**
+ * Visual tokens per wall level — colours and styling for the renderer.
+ *
+ * Palette follows the "beautiful desolation" aesthetic:
+ *   L1 Barricade   — rough fieldstone, warm earth tones
+ *   L2 Reinforced  — dressed stone with metallic bindings
+ *   L3 Root-Bound  — stone shot through with green resonance tendrils
+ *   L4 Deep-Root   — dark bastion stone with amber ward-light glow
+ */
+const WALL_VISUAL = [
+  { fill: '#8b7355', stroke: '#6b5b45', accent: '#a09080', label: 'Barricade' },
+  { fill: '#6b6b7b', stroke: '#55556b', accent: '#8b8b9b', label: 'Reinforced' },
+  { fill: '#5b6b4b', stroke: '#4b5b3b', accent: '#7b9b5b', label: 'Root-Bound' },
+  { fill: '#5b4b3b', stroke: '#4b3b2b', accent: '#c4a44a', label: 'Deep-Root' },
+];
+
+/**
+ * Draw all alive wall segments on the canvas.
+ *
+ * Called after turrets, before any fog/overlay pass.
+ * Walls render as rectangular stone blocks with level-based coloring,
+ * subtle masonry line detail, building animation (alpha pulse), and
+ * health bars. Damaged walls show crack lines.
+ *
+ * @param {CanvasRenderingContext2D} ctx
+ * @param {object} sim — sim state (reads sim.walls, sim.tick)
+ * @param {number} scale — pixels per cell
+ */
+export function drawWalls(ctx, sim, scale) {
+  const { walls = [], tick = 0 } = sim;
+  if (walls.length === 0) return;
+
+  for (const wall of walls) {
+    if (!wall.alive) continue;
+    drawWall(ctx, wall, scale, tick);
+  }
+}
+
+/**
+ * Draw a single wall segment.
+ *
+ * Renders as a rectangular stone block (slightly wider than tall)
+ * with level-based color, masonry line details, a subtle glow on
+ * higher tiers, and a health bar. Walls being built pulse their
+ * alpha. Damaged walls (HP < 50%) show fracture lines.
+ *
+ * @param {CanvasRenderingContext2D} ctx
+ * @param {object} wall — { x, y, level, hp, maxHp, radius, building, ... }
+ * @param {number} scale — pixels per cell
+ * @param {number} tick — current sim tick (for building pulse)
+ */
+function drawWall(ctx, wall, scale, tick) {
+  const visual = WALL_VISUAL[Math.min(wall.level, 3)] || WALL_VISUAL[0];
+  const sx = wall.x * scale;
+  const sy = wall.y * scale;
+  const r = (wall.radius || 0.8) * scale;
+  // Block shape: slightly wider than tall, like a masonry stone
+  const hw = r * 1.05;
+  const hh = r * 0.85;
+
+  // ── Building animation: alpha pulse 0.35 → 0.9 at ~3 Hz ─────────
+  let alpha = 1.0;
+  let buildingGlow = 0;
+  if (wall.building) {
+    const pulse = (Math.sin(tick * 0.3) + 1) / 2;           // 0.0–1.0
+    alpha = 0.35 + pulse * 0.55;                            // 0.35–0.90
+    buildingGlow = pulse * 0.4;                              // construction shimmer
+  }
+
+  ctx.save();
+  ctx.globalAlpha = alpha;
+
+  // ── Block body ───────────────────────────────────────────────────
+  // Rounded rectangle — reads as a dressed stone block
+  const cornerR = Math.max(2, r * 0.2);
+  ctx.beginPath();
+  ctx.moveTo(sx - hw + cornerR, sy - hh);
+  ctx.lineTo(sx + hw - cornerR, sy - hh);
+  ctx.arcTo(sx + hw, sy - hh, sx + hw, sy - hh + cornerR, cornerR);
+  ctx.lineTo(sx + hw, sy + hh - cornerR);
+  ctx.arcTo(sx + hw, sy + hh, sx + hw - cornerR, sy + hh, cornerR);
+  ctx.lineTo(sx - hw + cornerR, sy + hh);
+  ctx.arcTo(sx - hw, sy + hh, sx - hw, sy + hh - cornerR, cornerR);
+  ctx.lineTo(sx - hw, sy - hh + cornerR);
+  ctx.arcTo(sx - hw, sy - hh, sx - hw + cornerR, sy - hh, cornerR);
+  ctx.closePath();
+
+  ctx.fillStyle = hexToRgba(visual.fill, 0.75);
+  ctx.fill();
+  ctx.strokeStyle = visual.stroke;
+  ctx.lineWidth = Math.max(1.5, r * 0.15);
+  ctx.stroke();
+
+  // ── Masonry lines ────────────────────────────────────────────────
+  // Two subtle horizontal lines across the block — reads as stone courses
+  ctx.strokeStyle = hexToRgba(visual.stroke, 0.3);
+  ctx.lineWidth = Math.max(0.5, r * 0.05);
+  for (let dy = -hh * 0.35; dy <= hh * 0.35; dy += hh * 0.7) {
+    ctx.beginPath();
+    ctx.moveTo(sx - hw * 0.75, sy + dy);
+    ctx.lineTo(sx + hw * 0.75, sy + dy);
+    ctx.stroke();
+  }
+
+  // ── Level accent details ─────────────────────────────────────────
+  if (wall.level >= 2) {
+    // L3 Root-Bound: green resonance tendril veins
+    const tendrilAlpha = wall.level === 3 ? 0.4 : 0.25;
+    ctx.strokeStyle = hexToRgba(wall.level === 3 ? '#c4a44a' : '#7b9b5b', tendrilAlpha);
+    ctx.lineWidth = Math.max(0.8, r * 0.06);
+    // Vertical tendrils
+    for (let dx = -hw * 0.4; dx <= hw * 0.4; dx += hw * 0.4) {
+      ctx.beginPath();
+      ctx.moveTo(sx + dx, sy - hh * 0.8);
+      ctx.lineTo(sx + dx + hw * 0.1, sy + hh * 0.8);
+      ctx.stroke();
+    }
+  }
+
+  // ── L4 ward-light glow ───────────────────────────────────────────
+  if (wall.level === 3) {
+    ctx.shadowColor = '#c4a44a';
+    ctx.shadowBlur = r * 0.6;
+    // Re-stroke with glow shadow for the amber ward-light aura
+    ctx.beginPath();
+    ctx.moveTo(sx - hw + cornerR, sy - hh);
+    ctx.lineTo(sx + hw - cornerR, sy - hh);
+    ctx.arcTo(sx + hw, sy - hh, sx + hw, sy - hh + cornerR, cornerR);
+    ctx.lineTo(sx + hw, sy + hh - cornerR);
+    ctx.arcTo(sx + hw, sy + hh, sx + hw - cornerR, sy + hh, cornerR);
+    ctx.lineTo(sx - hw + cornerR, sy + hh);
+    ctx.arcTo(sx - hw, sy + hh, sx - hw, sy + hh - cornerR, cornerR);
+    ctx.lineTo(sx - hw, sy - hh + cornerR);
+    ctx.arcTo(sx - hw, sy - hh, sx - hw + cornerR, sy - hh, cornerR);
+    ctx.closePath();
+    ctx.strokeStyle = hexToRgba('#c4a44a', 0.35);
+    ctx.lineWidth = Math.max(2, r * 0.2);
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+  }
+
+  // ── Building shimmer overlay ─────────────────────────────────────
+  if (buildingGlow > 0.01) {
+    ctx.fillStyle = hexToRgba('#ffffff', buildingGlow);
+    ctx.beginPath();
+    ctx.moveTo(sx - hw + cornerR, sy - hh);
+    ctx.lineTo(sx + hw - cornerR, sy - hh);
+    ctx.arcTo(sx + hw, sy - hh, sx + hw, sy - hh + cornerR, cornerR);
+    ctx.lineTo(sx + hw, sy + hh - cornerR);
+    ctx.arcTo(sx + hw, sy + hh, sx + hw - cornerR, sy + hh, cornerR);
+    ctx.lineTo(sx - hw + cornerR, sy + hh);
+    ctx.arcTo(sx - hw, sy + hh, sx - hw, sy + hh - cornerR, cornerR);
+    ctx.lineTo(sx - hw, sy - hh + cornerR);
+    ctx.arcTo(sx - hw, sy - hh, sx - hw + cornerR, sy - hh, cornerR);
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  ctx.restore();
+
+  // ── Damage cracks (below 50% HP) ─────────────────────────────────
+  const hpRatio = wall.maxHp > 0 ? wall.hp / wall.maxHp : 1;
+  if (hpRatio < 0.5) {
+    const crackAlpha = (0.5 - hpRatio) * 1.6;  // 0 at 50%, 0.8 at 0%
+    ctx.save();
+    ctx.globalAlpha = crackAlpha;
+    ctx.strokeStyle = '#1a1a1a';
+    ctx.lineWidth = Math.max(0.5, r * 0.04);
+    // Diagonal crack lines
+    ctx.beginPath();
+    ctx.moveTo(sx - hw * 0.5, sy - hh * 0.6);
+    ctx.lineTo(sx + hw * 0.2, sy);
+    ctx.lineTo(sx - hw * 0.3, sy + hh * 0.5);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(sx + hw * 0.4, sy - hh * 0.5);
+    ctx.lineTo(sx - hw * 0.1, sy + hh * 0.1);
+    ctx.lineTo(sx + hw * 0.3, sy + hh * 0.6);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // ── Health bar ────────────────────────────────────────────────────
+  drawHealthBar(ctx, sx, sy, wall.hp, wall.maxHp, (wall.radius || 0.8) * 1.5, scale);
+}

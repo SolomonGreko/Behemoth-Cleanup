@@ -24,7 +24,8 @@ import { addResources } from './resource.js';
  * Extends the existing state machine (IDLE, MOVING, HARVEST, etc.)
  */
 export const BOT_STATES = {
-  // ... existing states ...
+  IDLE: 'IDLE',                     // Bot is idle, awaiting assignment
+  MOVING: 'MOVING',                 // Bot is moving to a target
   HARVEST_STONE: 'HARVEST_STONE',   // Bot is harvesting Stone from a zone
   RETURN_STONE: 'RETURN_STONE',     // Bot is returning to base with Stone
   DEPOSIT_STONE: 'DEPOSIT_STONE',   // Bot is depositing Stone at base

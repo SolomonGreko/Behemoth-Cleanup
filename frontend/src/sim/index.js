@@ -7,7 +7,7 @@
  */
 
 // Config
-export { RESOURCE, COST, ECON, ENEMY, WAVE, SWARM, BASE, LEVEL, DAY_CYCLE, TURRET } from './config.js';
+export { RESOURCE, COST, ECON, ENEMY, WAVE, SWARM, SCALING, BASE, LEVEL, DAY_CYCLE, TURRET, BOT } from './config.js';
 
 // Policy module
 export {
@@ -31,8 +31,12 @@ export {
   getStats,
   getLabourSummary,
   getWavePreview,
+  toggleSound,
+  setSoundEnabled,
   buyBot,
   buyWatcher,
+  buyWall,
+  buyWallUpgrade,
 } from './engine.js';
 
 // Bot integration
@@ -90,6 +94,24 @@ export {
   getTurretById,
 } from './turrets.js';
 
+// Wall system
+export {
+  createWall,
+  canPlaceWall,
+  damageWall,
+  destroyWall,
+  repairWall,
+  findNearestDamagedWall,
+  upgradeWall,
+  getWallCost,
+  tickWalls,
+  canMountOnWall,
+  findWallAt,
+  findBlockingWall,
+  isPointInWall,
+  getWallSummary,
+} from './walls.js';
+
 // Canvas rendering
 export {
   hexToRgba,
@@ -99,4 +121,5 @@ export {
   drawBase,
   drawEnemies,
   drawTurrets,
+  drawWalls,
 } from './render.js';

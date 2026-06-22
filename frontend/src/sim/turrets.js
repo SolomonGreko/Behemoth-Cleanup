@@ -170,6 +170,9 @@ export function findTarget(sim, turret) {
  * @param {object} target — the enemy to hit
  */
 function fireLaser(sim, turret, target) {
+  // Bail if target died since targeting (another turret may have killed it)
+  if (!target.alive || target.hp <= 0) return;
+
   target.hp -= turret.laserDamage;
 
   turret.laserCd = turret.laserCdMax;
@@ -230,6 +233,9 @@ function fireMortar(sim, turret, target) {
  * @param {object} enemy
  */
 function handleEnemyKill(sim, enemy) {
+  // Guard against double-kill: if already dead, skip
+  if (!enemy.alive) return;
+
   enemy.alive = false;
   sim.kills++;
   sim.waveEnemiesRemaining--;

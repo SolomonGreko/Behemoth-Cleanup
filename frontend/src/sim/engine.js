@@ -17,7 +17,7 @@
  * @module engine
  */
 
-import { RESOURCE, COST, ECON, ENEMY, WAVE, SWARM, BASE, DAY_CYCLE } from './config.js';
+import { RESOURCE, COST, ECON, ENEMY, WAVE, SWARM, SCALING, BASE, DAY_CYCLE, BOT, LEVEL } from './config.js';
 import {
   addResources,
   buildResourceHUD,
@@ -25,6 +25,18 @@ import {
   trySpend,
 } from './resource.js';
 import { tickTurrets, createWatcher } from './turrets.js';
+import {
+  createWall,
+  canPlaceWall,
+  damageWall,
+  findBlockingWall,
+  tickWalls,
+  getWallCost,
+  upgradeWall,
+  getWallSummary,
+} from './walls.js';
+import { generateStoneZones } from './world.js';
+import { assignStoneHarvest, tickStoneHarvest, tickStoneReturn } from './bots.js';
 
 // ═══════════════════════════════════════════════════════════════════════
 // RESOURCE STATE
@@ -78,6 +90,35 @@ export function resourceTick(sim, options = {}) {
   return sim.resourceHUD;
 }
 
+/** Find the highest level index whose kill threshold ≤ current kills. */
+export function getBaseLevel(kills) {
+  let level = 0;
+  for (let i = LEVEL.THRESHOLDS.length - 1; i > 0; i--) {
+    if (kills >= LEVEL.THRESHOLDS[i]) {
+      level = i;
+      break;
+    }
+  }
+  return level;
+}
+
+/**
+ * Apply damage to the base, absorbing through shield first.
+ * Shield takes the hit before base HP. Records lastHitTick for regen cooldown.
+ */
+function _applyBaseDamage(sim, damage) {
+  const shield = sim.shield;
+  if (shield.hp > 0) {
+    const absorbed = Math.min(shield.hp, damage);
+    shield.hp -= absorbed;
+    shield.lastHitTick = sim.tick;
+    damage -= absorbed;
+  }
+  if (damage > 0) {
+    sim.baseHp -= damage;
+  }
+}
+
 function accumulateEssence(sim, isFrozen) {
   if (isFrozen) return;
 
@@ -86,7 +127,11 @@ function accumulateEssence(sim, isFrozen) {
     return;
   }
 
-  sim.essenceAccum += RESOURCE.essence.perTick;
+  // Level-scaling: higher base levels get faster essence income.
+  // BONUSES[0]=L1 (×1.0), BONUSES[1]=L2 (×1.4), BONUSES[2]=L3 (×1.9), BONUSES[3]=L4 (×2.5)
+  const level = getBaseLevel(sim.kills);
+  const essenceMul = LEVEL.BONUSES[level].essenceMul;
+  sim.essenceAccum += RESOURCE.essence.perTick * essenceMul;
 
   const whole = Math.floor(sim.essenceAccum);
   if (whole > sim.resources.essence) {
@@ -140,8 +185,7 @@ export function createSim(options = {}) {
     baseHp: BASE.startingHp,
     baseMaxHp: BASE.hp,
     baseLevel: 0,
-    baseShieldHp: 0,
-    baseMaxShield: 0,
+    shield: { hp: 0, maxHp: 0, regen: 0.5, lastHitTick: 0 },
     baseRadius: BASE.radius,
     kills: 0,
 
@@ -173,15 +217,24 @@ export function createSim(options = {}) {
     effRootSpeed: 1.0,
 
     gameOver: false,
+    soundEnabled: true,
 
     // Scoped mutable state (prevents cross-instance corruption on hot-reload)
     _nextEnemyId: 1,
     _nextTurretId: 1,
+    _nextWallId: 1,
+    _nextBotId: 1,
     _abilityCooldowns: {},
   };
 
   initResourceState(sim);
   genWorld(sim);
+  generateStoneZones(sim, Date.now(), Math.random);
+
+  // Create starting bot(s) — placed after genWorld so stoneZones exist
+  for (let i = 0; i < BOT.startingBots; i++) {
+    sim.bots.push(createBot(sim));
+  }
 
   sim.purchasableItems = [
     { id: 'buyBot', label: 'Buy Bot', cost: COST.buyBot },
@@ -222,6 +275,60 @@ function genWorld(sim) {
   world.grid = grid;
 }
 
+/**
+ * Create a worker bot at the given position (or near base center if omitted).
+ */
+function createBot(sim, x, y) {
+  const bx = x ?? sim.baseCenter.x + (Math.random() - 0.5) * 2;
+  const by = y ?? sim.baseCenter.y + (Math.random() - 0.5) * 2;
+  return {
+    id: sim._nextBotId++,
+    x: bx,
+    y: by,
+    speed: BOT.speed,
+    size: BOT.size,
+    state: 'IDLE',
+    harvestZoneId: null,
+    harvestProgress: 0,
+    harvestTarget: 0,
+    carryingStone: 0,
+    targetX: null,
+    targetY: null,
+    lastHarvestCapped: false,
+  };
+}
+
+/** Tick the base: shield regen, level-up, radius scaling. */
+function tickBase(sim) {
+  const shield = sim.shield;
+
+  // Shield regen: 0.5 HP/tick after 90-tick cooldown since last hit (1.5s at 60tps)
+  if (shield.hp < shield.maxHp && sim.tick - shield.lastHitTick > 90) {
+    shield.hp = Math.min(shield.hp + shield.regen, shield.maxHp);
+  }
+
+  // Level-up check
+  const newLevel = getBaseLevel(sim.kills);
+  if (newLevel > sim.baseLevel) {
+    sim.baseLevel = newLevel;
+    const bonus = LEVEL.BONUSES[newLevel];
+
+    // Scale base max HP
+    sim.baseMaxHp = Math.round(BASE.hp * bonus.hpMul);
+    sim.baseHp = sim.baseMaxHp; // full heal on level-up
+
+    // Scale shield
+    shield.maxHp = LEVEL.SHIELD_HP[newLevel];
+    shield.hp = shield.maxHp; // refill shield on level-up
+
+    // Scale radius
+    sim.baseRadius = BASE.radius * bonus.radiusMul;
+
+    // Sound
+    sim.sounds.push('base_upgrade');
+  }
+}
+
 // ═══════════════════════════════════════════════════════════════════════
 // MAIN TICK
 // ═══════════════════════════════════════════════════════════════════════
@@ -237,6 +344,9 @@ export function stepTick(sim, options = {}) {
   tickWaves(sim);
   tickEnemies(sim);
   tickTurrets(sim);
+  tickWalls(sim);
+  tickBots(sim);
+  tickBase(sim);
 
   if (sim.emergencyShield?.active && sim.tick >= sim.emergencyShield.expiresAt) {
     sim.emergencyShield.active = false;
@@ -404,15 +514,25 @@ function createEnemy(sim, type, spawnPoint, wave) {
   const config = ENEMY[type];
   if (!config) return null;
 
+  // Wave scaling factor: stat = base * (1 + SCALE * (wave - 1))
+  const scaleFactor = wave - 1;
+
+  const scaledHp = Math.min(
+    config.hp * (1 + SCALING.HP_SCALE * scaleFactor),
+    config.hp * SCALING.HP_CAP
+  );
+  const scaledSpeed = config.speed * (1 + SCALING.SPEED_SCALE * scaleFactor);
+  const scaledDamage = config.damage * (1 + SCALING.DAMAGE_SCALE * scaleFactor);
+
   return {
     id: sim._nextEnemyId++,
     type,
     x: spawnPoint.x,
     y: spawnPoint.y,
-    hp: config.hp,
-    maxHp: config.hp,
-    speed: config.speed,
-    damage: config.damage,
+    hp: scaledHp,
+    maxHp: scaledHp,
+    speed: scaledSpeed,
+    damage: scaledDamage,
     size: config.size,
     alive: true,
     wave,
@@ -435,14 +555,23 @@ function tickEnemies(sim) {
     if (!enemy.alive) continue;
 
     if (enemy.state === 'moving') {
+      // Check for wall collision before moving
+      const blockingWall = findBlockingWall(sim, enemy);
+      if (blockingWall) {
+        enemy.state = 'sieging';
+        enemy.siegeTargetId = blockingWall.id;
+        continue;
+      }
+
       const dx = baseCenter.x - enemy.x;
       const dy = baseCenter.y - enemy.y;
       const dist = Math.sqrt(dx * dx + dy * dy);
 
       if (dist < 0.75) {
         if (!sim.emergencyShield?.active) {
-          sim.baseHp -= enemy.damage;
+          _applyBaseDamage(sim, enemy.damage);
         }
+        sim.kills++;
         enemy.alive = false;
         sim.waveEnemiesRemaining--;
 
@@ -462,11 +591,76 @@ function tickEnemies(sim) {
           enemy.x += (Math.random() - 0.5) * SWARM.jitter * 2;
           enemy.y += (Math.random() - 0.5) * SWARM.jitter * 2;
         }
+
+        // Check wall collision after movement
+        const wall = findBlockingWall(sim, enemy);
+        if (wall) {
+          enemy.state = 'sieging';
+          enemy.siegeTargetId = wall.id;
+        }
+      }
+    }
+
+    if (enemy.state === 'sieging') {
+      const wall = sim.walls.find((w) => w.id === enemy.siegeTargetId && w.alive);
+      if (!wall) {
+        // Wall destroyed — resume moving
+        enemy.state = 'moving';
+        enemy.siegeTargetId = null;
+        continue;
+      }
+
+      // Attack the wall
+      const result = damageWall(sim, wall, enemy.damage);
+      if (result.destroyed) {
+        enemy.state = 'moving';
+        enemy.siegeTargetId = null;
       }
     }
   }
 
   sim.enemies = sim.enemies.filter((e) => e.alive);
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// BOT MOVEMENT AND HARVESTING
+// ═══════════════════════════════════════════════════════════════════════
+
+function tickBots(sim) {
+  for (const bot of sim.bots) {
+    switch (bot.state) {
+      case 'IDLE':
+        assignStoneHarvest(sim, bot);
+        break;
+      case 'HARVEST_STONE': {
+        const zone = sim.stoneZones?.find((z) => z.id === bot.harvestZoneId);
+        if (zone) {
+          moveBotToward(bot, zone.x, zone.y);
+          tickStoneHarvest(sim, bot);
+        }
+        break;
+      }
+      case 'RETURN_STONE': {
+        moveBotToward(bot, sim.baseCenter.x, sim.baseCenter.y);
+        tickStoneReturn(sim, bot);
+        break;
+      }
+      case 'DEPOSIT_STONE':
+        tickStoneReturn(sim, bot);
+        break;
+    }
+  }
+}
+
+function moveBotToward(bot, tx, ty) {
+  if (tx == null || ty == null) return;
+  const dx = tx - bot.x;
+  const dy = ty - bot.y;
+  const dist = Math.sqrt(dx * dx + dy * dy);
+  if (dist < 0.1) return;
+  const step = Math.min(bot.speed, dist);
+  bot.x += (dx / dist) * step;
+  bot.y += (dy / dist) * step;
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -538,12 +732,16 @@ function buildHUD(sim) {
     baseHp: sim.baseHp,
     baseMaxHp: sim.baseMaxHp,
     baseLevel: sim.baseLevel,
+    baseShield: { hp: sim.shield.hp, maxHp: sim.shield.maxHp },
     kills: sim.kills,
     enemyCount: sim.enemies.length,
     botCount: sim.bots.length,
     turretCount: sim.turrets.length,
+    wallCount: sim.walls.filter((w) => w.alive).length,
+    walls: getWallSummary(sim),
     dayPhase: sim.dayPhase,
     gameOver: sim.gameOver,
+    soundEnabled: sim.soundEnabled,
     resources: sim.resourceHUD?.resources || null,
   };
 }
@@ -554,6 +752,14 @@ function buildHUD(sim) {
 
 export function getStats(sim) {
   return buildHUD(sim);
+}
+
+export function toggleSound(sim) {
+  sim.soundEnabled = !sim.soundEnabled;
+}
+
+export function setSoundEnabled(sim, value) {
+  sim.soundEnabled = Boolean(value);
 }
 
 export function getWavePreview(sim) {
@@ -578,10 +784,26 @@ export function getWavePreview(sim) {
 }
 
 export function buyBot(sim) {
+  if (sim.bots.length >= BOT.maxBots) {
+    return { success: false, reason: 'Max bots reached' };
+  }
   const cost = COST.buyBot;
   const result = trySpend(sim, cost);
   if (!result.success) return result;
-  return { success: true };
+
+  const bot = createBot(sim);
+  sim.bots.push(bot);
+  sim.sounds.push('build');
+
+  sim.debugLog.push({
+    msg: `Bot #${bot.id} built (${sim.bots.length}/${BOT.maxBots})`,
+    tick: sim.tick,
+  });
+  if (sim.debugLog.length > 50) {
+    sim.debugLog = sim.debugLog.slice(-50);
+  }
+
+  return { success: true, botId: bot.id };
 }
 
 export function buyWatcher(sim) {
@@ -602,4 +824,58 @@ export function buyWatcher(sim) {
   }
 
   return { success: true, turretId: watcher.id };
+}
+
+export function buyWall(sim, x, y) {
+  // Validate placement
+  const check = canPlaceWall(sim, x, y);
+  if (!check.valid) return { success: false, reason: check.reason };
+
+  // L1 walls are free; higher levels require payment later via upgrade
+  const cost = getWallCost(0); // Start with L1 (free)
+  const result = trySpend(sim, cost);
+  if (!result.success) return result;
+
+  // Create the wall
+  const wall = createWall(sim, x, y, 0);
+  sim.sounds.push('build');
+
+  sim.debugLog.push({
+    msg: `Wall #${wall.id} (${wall.label}) placed at (${x}, ${y})`,
+    tick: sim.tick,
+  });
+  if (sim.debugLog.length > 50) {
+    sim.debugLog = sim.debugLog.slice(-50);
+  }
+
+  return { success: true, wallId: wall.id };
+}
+
+export function buyWallUpgrade(sim, wallId) {
+  const wall = sim.walls.find((w) => w.id === wallId);
+  if (!wall || !wall.alive) {
+    return { success: false, reason: 'Wall not found' };
+  }
+
+  if (wall.level >= 3) {
+    return { success: false, reason: 'Wall already at max level' };
+  }
+
+  const nextLevel = wall.level + 1;
+  const cost = getWallCost(nextLevel);
+  const result = trySpend(sim, cost);
+  if (!result.success) return result;
+
+  upgradeWall(wall);
+  sim.sounds.push('build');
+
+  sim.debugLog.push({
+    msg: `Wall #${wall.id} upgraded to ${wall.label}`,
+    tick: sim.tick,
+  });
+  if (sim.debugLog.length > 50) {
+    sim.debugLog = sim.debugLog.slice(-50);
+  }
+
+  return { success: true, wallId: wall.id };
 }

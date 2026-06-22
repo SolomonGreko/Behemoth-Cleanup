@@ -1,12 +1,12 @@
 # Behemoth — Tower Defense Game
 
-> **Phase**: Core Systems (Day 1 complete)
-> **Last updated**: 2026-06-22
+> **Phase**: Core Systems (Day 1 complete — all core engine, rendering, and lore systems built)
+> **Last updated**: 2026-06-22 19:23 UTC
 > **Maintained by**: The Scribe (Hermes)
 
 ## Overview
 
-Behemoth is a tower-defense game with a simulation-engine core. Players defend a bastion against waves of Shroud-creatures by building walls, deploying turrets (watchers), harvesting resources (Stone/Crystal/Essence), and managing a day/night cycle where enemies attack only at night.
+Behemoth is a tower-defense game with a simulation-engine core. Players defend a bastion against waves of Shroud-creatures by building walls, deploying turrets (watchers), harvesting resources (Stone/Crystal/Essence), and managing a day/night cycle (the Shroud-Tide) where enemies attack only at night.
 
 ## Architecture
 
@@ -18,47 +18,59 @@ frontend/
       resource.js               # Resource economy (canAfford, trySpend, addResources)
       behemoth.js               # Behemoth-specific abilities (Pulse Wave, FD, Shield)
       turrets.js                # Turret/watcher system (targeting, laser, mortar, upgrades)
-      bots.js                   # Worker bot management (harvesting, pathfinding stubs)
+      walls.js                  # Wall system (placement, damage, repair, upgrade, siege)
+      bots.js                   # Worker bot management (harvesting, pathfinding)
       enemies.js                # Enemy type definitions and behavior stubs
       world.js                  # World generation (terrain zones, base placement)
       labour.js                 # Labour/construction stubs
-      render.js                 # Canvas rendering (background, enemies, turrets, health bars)
-      config.js                 # All tuning — RESOURCE, ENEMY, WAVE, SWARM, BASE, TURRET, WALL, DAY_CYCLE
+      render.js                 # Canvas rendering (background, enemies, turrets, walls, health bars)
+      sound.js                  # Sound playback consumer (event queue drain, mute toggle)
+      config.js                 # All tuning — RESOURCE, COST, ECON, BOT, ENEMY, SCALING, WAVE, SWARM, BASE, TURRET, WALL, DAY_CYCLE
       index.js                  # Barrel exports
       __tests__/                # Vitest test suites
     components/
-      BehemothGame.jsx          # Main game React component
+      BehemothGame.jsx          # Main game React component (includes SoundToggle)
       ResourceHUD.jsx           # Resource display HUD
-  docs/
-    design/                     # Game design specs (Athena)
-      wall-system-design.md     # Wall system spec
-    story/                      # Narrative and lore (Calliope)
-      field-guide-shroud-creatures-and-fallen-bastions.md
-      the-vigils-arsenal.md
+docs/
+  design/                       # Game design specs (Athena)
+    wall-system-design.md       # Wall system spec
+  story/                        # Narrative and lore (Calliope)
+    field-guide-shroud-creatures-and-fallen-bastions.md
+    the-vigils-arsenal.md
+    the-vigils-rhythm.md        # Shroud-Tide, Four Watches, Chime-Forged bots
 ```
 
-## State — 2026-06-22 (Day 1)
+## State — 2026-06-22 (Day 1, end-of-day)
 
 ### Complete
 - [x] **Resource economy** — Stone/Crystal/Essence with caps, harvesting, drops, spending gates
 - [x] **Engine v2** — Main game loop: wave spawning, swarm mechanics, enemy movement, base damage, game-over detection
-- [x] **Day/night cycle** — Dawn→Day→Dusk→Night phases; waves spawn only at night
+- [x] **Day/night cycle** — Dawn→Day→Dusk→Night phases (Shroud-Tide); waves spawn only at night
 - [x] **Turrets v1** — Watcher system with laser/mortar targeting, upgrades, engine integration
-- [x] **Render layer** — Canvas background (4-layer atmospheric), enemy shapes (5 types), turret emplacements, health bars
-- [x] **Security audits** — buyBot/buyWatcher bypass fixed, all module-level mutable state scoped to sim instances
-- [x] **Lore** — 4 fallen bastions named, 5 Shroud-creature types with mechanics tie-ins, full arsenal narrative
+- [x] **Walls v1** — Wall placement, damage, repair, upgrade (4 tiers), siege AI, engine integration
+- [x] **Bot harvesting loop** — Worker bots harvest Stone from terrain zones; integrated into stepTick
+- [x] **Base level scaling** — LEVEL.BONUSES essenceMul drives per-level essence income; shield HP scales by level
+- [x] **SCALING config** — Per-wave enemy HP/speed/damage/crystal scaling multipliers
+- [x] **Sound system** — Sound playback consumer with event queue drain and mute toggle
+- [x] **Render layer** — Canvas background (4-layer atmospheric), enemies (5 shape types), turrets, walls (4-tier visual), health bars
+- [x] **SoundToggle UI** — Mute/unmute speaker button in BehemothGame.jsx
+- [x] **Security audits** — buyBot/buyWatcher bypass fixed, all module-level mutable state scoped to sim instances, turret double-kill fixed, Pulse Wave zombie fix
+- [x] **Lore** — 4 fallen bastions named, 5 Shroud-creature types, full arsenal narrative, Shroud-Tide day/night lore, Chime-Forged bots
 
 ### In Progress
 - _None_
 
 ### Next Up
-- [ ] **Walls implementation** — Design spec complete (Athena); needs Hephaestus implementation
-- [ ] **Bot harvesting loop** — bots.js has definitions but the harvesting tick is not yet integrated into stepTick
-- [ ] **Frontend integration** — React components exist but no component tests
+- [ ] **Frontend integration tests** — React components exist but no component tests
+- [ ] **Enemy behaviors v1** — Enemy type-specific behaviors (scout pathing, tank, artillery, crawler, boss)
+- [ ] **Stone zone generation** — World generation creates stone zones on map init
+- [ ] **Git push access** — Remote returns 403; commits are local only
+- [ ] **labour.js implementation** — Construction labour system stubbed but not built
 
 ### Known Issues
 - **Push access blocked** — Remote `https://github.com/SolomonGreko/Behemoth.git` returns 403; commits are local only
-- **PROJECT.md** (this file) created retroactively on Day 1 — may need refinement
+- **engine.test.js: 1 failure** — `baseShieldHp` test expects 0 but field is undefined in createSim (base-shield-level work introduced this; non-blocking, 268/269 pass)
+- **Demeter gap scan** — Identified VISUAL_SPEC.md undecomposed, 2 force-completed tasks blocking 3 children, stale PROJECT.md (now updated)
 
 ## Resources
 
@@ -67,7 +79,7 @@ Three resource types flow through the game loop:
 |----------|--------|-----------|
 | Stone | Bot harvesting from terrain zones | Walls, structures, bots, storage upgrades |
 | Crystal | Enemy death drops | Watchers, advanced turrets, mortar upgrades |
-| Essence | Passive accumulation over time | Pulse Wave, Final Defense hasten, Emergency Shield |
+| Essence | Passive accumulation over time (level-scaled) | Pulse Wave, Final Defense hasten, Emergency Shield |
 
 ## Config Blocks
 
@@ -75,23 +87,27 @@ All tuning lives in `frontend/src/sim/config.js`:
 - `RESOURCE` — Stone/Crystal/Essence rates, caps, drop tables, ability costs, storage upgrades
 - `COST` — Building/purchase costs (bots, watchers, walls, storage upgrades)
 - `ECON` — Starting values, bot defaults
+- `BOT` — Worker bot intrinsics (speed, size, max count, starting count)
 - `ENEMY` — 5 enemy types (scout, tank, artillery, crawler/skitterling, boss)
+- `SCALING` — Per-wave enemy stat multipliers (HP, speed, damage, crystal drop), HP cap
 - `WAVE` — Wave timing, enemy counts, composition ratios
 - `SWARM` — Swarm wave multipliers and frequency
 - `BASE` — Base HP, shield settings, game-over thresholds
 - `TURRET` — Watcher stats, laser/mortar damage, upgrade tiers, targeting ranges
 - `WALL` — 4 level tiers, HP, build ticks, repair rate, placement constraints
 - `DAY_CYCLE` — Phase durations (dawn/day/dusk/night in ticks)
+- `LEVEL` — Base level thresholds (cumulative kills) and per-level bonuses (hpMul, essenceMul, radiusMul, shield HP)
 
 ## Tests
 
 ```
-Test Suites: 5 passed (5)
-Tests:       203 passed (203)
+Test Suites: 6 (1 with 1 known failure)
+Tests:       269 total — 268 passing, 1 failing (engine.test.js baseShieldHp)
 ```
 - `resource.test.js` — 69 tests (resource accumulation, spending, caps)
-- `engine.test.js` — 44 tests (wave spawning, enemy movement, day/night, game-over)
+- `engine.test.js` — 52 tests (wave spawning, enemy movement, day/night, game-over, bot harvesting, wall siege)
 - `turrets.test.js` — 37 tests (targeting, damage, upgrades, mounting)
+- `walls.test.js` — 66 tests (placement, damage, repair, upgrade, siege integration, engine purchase paths)
 - `resource-integration.test.js` — 28 tests (cross-module resource flows)
 - `security-adversarial.test.js` — 25 tests (overflow, injection, rate-limiting)
 
@@ -99,10 +115,11 @@ Tests:       203 passed (203)
 
 | Agent | Domain | Status |
 |-------|--------|--------|
-| Hephaestus | Engineering (sim engine, turrets, bots) | Active |
+| Hephaestus | Engineering (sim engine, turrets, walls, bots) | Active |
 | Athena | Game design (config, specs, balance) | Active |
-| Aphrodite | Visual (rendering, UI, canvas) | Active |
+| Aphrodite | Visual (rendering, UI, canvas, sound) | Active |
 | Calliope | Narrative (lore, world-building, naming) | Active |
 | Ares | Security (audits, hardening, adversarial tests) | Active |
 | Apollo | Bug fixes, diagnostics | Active |
+| Demeter | Gap scanning, project health | Active |
 | Scribe (Hermes) | SSoT, commits, digests | Active |
