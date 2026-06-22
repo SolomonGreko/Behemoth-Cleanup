@@ -495,3 +495,60 @@ export const DAY_CYCLE = {
     end:   '#191970',  // midnight (night end)
   },
 };
+
+/**
+ * LABOUR — bot task allocation policy.
+ *
+ * The labour system decides what every bot does on every tick. It builds
+ * a job board from world state (damaged walls → REPAIR, pending builds →
+ * BUILD, available stone zones → HARVEST_STONE), scores each (bot, job)
+ * pair using dynamic urgency × proximity × stacking multipliers, and
+ * greedily assigns the highest-scoring pairs. Crisis detection shifts
+ * priorities when Stone is critically low.
+ *
+ * All parameters are consumed by labour.js::tickLabour().
+ *
+ * Default values reproduce day-one gameplay: REPAIR is always highest
+ * priority, HARVEST_STONE is the fallback, stacking penalty prevents
+ * bot clumping, crisis mode activates below 15 Stone.
+ */
+export const LABOUR = {
+  // ── Base priorities (higher = more important) ───────────────────
+  basePriorities: {
+    REPAIR: 100,
+    BUILD: 70,
+    FIGHT: 60,
+    HARVEST_STONE: 40,
+    TILL: 10,
+  },
+
+  // ── Urgency scaling ─────────────────────────────────────────────
+  repairUrgencyScale: 2.0,        // multiplier for HP-deficit urgency
+  stoneUrgencyFloor: 0.3,         // minimum harvest priority multiplier (at cap)
+  stoneUrgencyCeiling: 2.0,       // maximum harvest priority multiplier (near zero)
+  stoneUrgencyThreshold: 0.2,     // fraction of stone cap where urgency peaks
+  fightUrgencyPerEnemy: 0.1,      // urgency boost per nearby enemy
+
+  // ── Proximity bonus ─────────────────────────────────────────────
+  proximityMaxBonus: 0.3,         // max priority boost for standing on the job
+  proximityDecay: 0.02,           // bonus lost per cell of distance (15-cell range)
+
+  // ── Stacking penalties ──────────────────────────────────────────
+  stackingPenalty: 0.15,          // priority reduction per additional bot on same job
+  maxWorkersPerRepair: 3,         // max bots repairing one wall
+  maxWorkersPerBuild: 1,          // max bots building one structure
+  maxWorkersPerHarvest: 3,        // reuse RESOURCE.stone.maxHarvestersPerZone
+
+  // ── Crisis detection ────────────────────────────────────────────
+  crisis: {
+    stoneThreshold: 15,           // Stone below this = crisis mode
+    stoneRecoveryThreshold: 30,   // Stone above this = recovery complete
+    crisisHarvestPriority: 70,    // HARVEST priority during crisis
+    crisisRepairCap: 1.5,         // max repair urgency multiplier during crisis
+  },
+
+  // ── Tick interval ───────────────────────────────────────────────
+  reassignInterval: 60,           // ticks between full labour re-evaluation (1s)
+  // Per-tick, only incremental: check preemption, assign idle bots.
+  // Full re-score runs every reassignInterval ticks to reduce CPU.
+};

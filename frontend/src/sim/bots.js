@@ -29,6 +29,8 @@ export const BOT_STATES = {
   HARVEST_STONE: 'HARVEST_STONE',   // Bot is harvesting Stone from a zone
   RETURN_STONE: 'RETURN_STONE',     // Bot is returning to base with Stone
   DEPOSIT_STONE: 'DEPOSIT_STONE',   // Bot is depositing Stone at base
+  REPAIR: 'REPAIR',                 // Bot is repairing a damaged wall
+  BUILD: 'BUILD',                   // Bot is constructing/upgrading a wall
 };
 
 // ── Harvest Zone Management ─────────────────────────────────────────

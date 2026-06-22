@@ -778,7 +778,7 @@ function InspectPanel({ sim, turret }) {
       // Laser damage
       React.createElement('div', { style: styles.inspectStat },
         React.createElement('span', { style: styles.inspectStatLabel }, 'Dmg'),
-        React.createElement('span', { style: styles.inspectStatValue, color: '#f87171' },
+        React.createElement('span', { style: Object.assign({}, styles.inspectStatValue, { color: '#f87171' }) },
           turret.laserDamage
         )
       ),
@@ -1622,7 +1622,7 @@ const styles = {
     background: 'rgba(107, 164, 199, 0.06)',
     borderRadius: '6px',
     border: '1px solid rgba(107, 164, 199, 0.25)',
-    fontFamily: \"'Courier New', monospace\",
+    fontFamily: "'Courier New', monospace",
     userSelect: 'none',
   },
 

@@ -23,6 +23,8 @@ export default function App() {
   useEffect(() => {
     const sim = createSim({ worldWidth: 50, worldHeight: 50 });
     simRef.current = sim;
+    // Temporary debug: expose sim for integration testing
+    if (typeof window !== 'undefined') window.__sim = sim;
 
     let running = true;
 

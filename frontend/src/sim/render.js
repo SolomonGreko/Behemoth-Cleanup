@@ -1296,6 +1296,155 @@ export function drawBossShockwaves(ctx, scale, tick) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
+// TURRET MUZZLE FLASH VFX (Aphrodite — firing feedback)
+// ═══════════════════════════════════════════════════════════════════════
+
+/**
+ * Active muzzle flash events. Each entry:
+ *   { x, y, bornTick, color, isMortar }
+ *
+ * Spawned when a turret fires (detected via laserCd/mortarCd state
+ * transition from 0 → max). Flash expands as a bright ring + core
+ * glow over 6 ticks (~100ms), fading to nothing.
+ */
+const muzzleFlashes = [];
+
+/** Map of turret.id → previous laserCd value for fire detection. */
+const prevLaserCd = new Map();
+
+/** Map of turret.id → previous mortarCd value for fire detection. */
+const prevMortarCd = new Map();
+
+/** Max age in ticks before a muzzle flash is pruned (~100ms at 60 tps). */
+const MUZZLE_FLASH_LIFE = 6;
+
+/**
+ * Scan turrets for firing events and record muzzle flashes.
+ *
+ * A turret is considered to have fired when laserCd jumps from 0
+ * (ready) to its max value (just fired and reset). Same for mortarCd.
+ * The flash appears at the turret's world position.
+ *
+ * Called once per frame before drawTurrets.
+ *
+ * @param {object[]} turrets — sim.turrets array
+ * @param {number} tick — current sim tick
+ */
+function recordTurretMuzzleFlashes(turrets, tick) {
+  for (const turret of turrets) {
+    if (!turret.alive) continue;
+
+    const prevCd = prevLaserCd.get(turret.id) ?? 0;
+    // Fire detected: previous tick at 0, current tick at max (just reset)
+    if (prevCd === 0 && turret.laserCd === turret.laserCdMax && turret.laserCdMax > 0) {
+      muzzleFlashes.push({
+        x: turret.x,
+        y: turret.y,
+        bornTick: tick,
+        color: turret.type === 'turret' ? '#6ba4c7' : '#4b8bb4',
+        isMortar: false,
+      });
+    }
+    prevLaserCd.set(turret.id, turret.laserCd);
+
+    // Mortar fire detection
+    if (turret.hasMortar) {
+      const prevMCd = prevMortarCd.get(turret.id) ?? 0;
+      if (prevMCd === 0 && turret.mortarCd === turret.mortarCdMax && turret.mortarCdMax > 0) {
+        muzzleFlashes.push({
+          x: turret.x,
+          y: turret.y,
+          bornTick: tick,
+          color: '#fbbf24',  // amber — mortar has distinct explosive feel
+          isMortar: true,
+        });
+      }
+      prevMortarCd.set(turret.id, turret.mortarCd);
+    }
+  }
+}
+
+/**
+ * Draw active muzzle flash VFX.
+ *
+ * Renders a two-layer flash at each event position:
+ *   1. Expanding outer ring — pulses from 0.15→0.40 cells over life,
+ *      fading alpha 0.7→0, with shadowBlur glow
+ *   2. Bright core circle — white-hot center, shrinks 0.10→0 cells,
+ *      alpha 0.9→0
+ *
+ * Colors: steel-blue for lasers (#6ba4c7 / #4b8bb4),
+ *          amber for mortars (#fbbf24).
+ *
+ * Called from drawTurrets (or after), before any overlay pass.
+ *
+ * @param {CanvasRenderingContext2D} ctx
+ * @param {number} scale — pixels per cell
+ * @param {number} tick — current sim tick
+ */
+export function drawTurretMuzzleFlashes(ctx, scale, tick) {
+  // Prune expired flashes
+  for (let i = muzzleFlashes.length - 1; i >= 0; i--) {
+    if (tick - muzzleFlashes[i].bornTick > MUZZLE_FLASH_LIFE) {
+      muzzleFlashes.splice(i, 1);
+    }
+  }
+
+  for (const mf of muzzleFlashes) {
+    const age = tick - mf.bornTick;
+    const lifeRatio = age / MUZZLE_FLASH_LIFE; // 0 → 1
+
+    const sx = mf.x * scale;
+    const sy = mf.y * scale;
+
+    // Ring: expands 0.15 → 0.40 cells
+    const ringInner = (0.15 + lifeRatio * 0.25) * scale;
+    const ringOuter = ringInner + Math.max(1.5, scale * 0.08);
+    // Alpha: 0.7 → 0 (quick falloff)
+    const ringAlpha = (1 - lifeRatio) * 0.7;
+
+    // Core: shrinks 0.10 → 0 cells
+    const coreRadius = Math.max(0.5, (1 - lifeRatio) * 0.10 * scale);
+    const coreAlpha = (1 - lifeRatio) * 0.9;
+
+    if (ringAlpha < 0.02 && coreAlpha < 0.02) continue;
+
+    ctx.save();
+
+    // ── Outer glow ring ───────────────────────────────────────────
+    if (ringAlpha > 0.02) {
+      ctx.shadowColor = mf.color;
+      ctx.shadowBlur = ringOuter * 0.5;
+      ctx.beginPath();
+      ctx.arc(sx, sy, ringOuter, 0, Math.PI * 2);
+      ctx.strokeStyle = hexToRgba(mf.color, ringAlpha);
+      ctx.lineWidth = Math.max(1, ringOuter - ringInner);
+      ctx.stroke();
+    }
+
+    // ── Bright core ───────────────────────────────────────────────
+    if (coreAlpha > 0.02) {
+      ctx.shadowColor = '#ffffff';
+      ctx.shadowBlur = coreRadius * 3;
+      ctx.fillStyle = hexToRgba('#ffffff', coreAlpha);
+      ctx.beginPath();
+      ctx.arc(sx, sy, coreRadius, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Inner white-hot speck
+      ctx.shadowBlur = coreRadius * 5;
+      ctx.fillStyle = hexToRgba('#ffffff', coreAlpha * 0.6);
+      ctx.beginPath();
+      ctx.arc(sx, sy, coreRadius * 0.4, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    ctx.shadowBlur = 0;
+    ctx.restore();
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
 // TURRET DRAWING
 // ═══════════════════════════════════════════════════════════════════════
 
@@ -1306,18 +1455,27 @@ export function drawBossShockwaves(ctx, scale, tick) {
  * Each turret renders as a static hexagonal emplacement with a barrel
  * line pointing toward its current target (or upward if idle).
  *
+ * Also records muzzle flash events for firing turrets (detected via
+ * laserCd/mortarCd state transitions).
+ *
  * @param {CanvasRenderingContext2D} ctx
  * @param {object} sim — sim state (reads sim.turrets)
  * @param {number} scale — pixels per cell
  */
 export function drawTurrets(ctx, sim, scale) {
-  const { turrets = [] } = sim;
+  const { turrets = [], tick = 0 } = sim;
   if (turrets.length === 0) return;
+
+  // Detect firing events before drawing turrets
+  recordTurretMuzzleFlashes(turrets, tick);
 
   for (const turret of turrets) {
     if (!turret.alive) continue;
     drawTurret(ctx, turret, scale);
   }
+
+  // Draw muzzle flashes on top of turrets
+  drawTurretMuzzleFlashes(ctx, scale, tick);
 }
 
 /**

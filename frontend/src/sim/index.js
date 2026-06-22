@@ -48,7 +48,6 @@ export {
   tickStoneHarvest,
   tickStoneReturn,
   releaseStoneZone,
-  hasHigherPriorityWork,
 } from './bots.js';
 
 // Enemy integration
@@ -64,9 +63,16 @@ export {
 
 // Labour allocator
 export {
-  LABOUR_PRIORITY,
-  reassignBot,
-  getBotPriority,
+  tickLabour,
+  buildJobBoard,
+  scoreJob,
+  assignBotToJob,
+  detectCrisis,
+  getUrgency,
+  getProximityBonus,
+  getStackingMultiplier,
+  hasHigherPriorityWork,
+  getBasePriority,
 } from './labour.js';
 
 // World generation
@@ -128,6 +134,7 @@ export {
   drawDeathParticles,
   drawCrystalDrops,
   drawBossShockwaves,
+  drawTurretMuzzleFlashes,
   drawTurrets,
   drawBots,
   drawWalls,

@@ -38,6 +38,7 @@ import {
 import { generateStoneZones } from './world.js';
 import { assignStoneHarvest, tickStoneHarvest, tickStoneReturn } from './bots.js';
 import { tickArtilleryEnemy, tickScoutAI, tickTankAura, checkCrawlerStack, tickBossAI, fireBossShockwave } from './enemies.js';
+import { tickLabour } from './labour.js';
 
 // ═══════════════════════════════════════════════════════════════════════
 // RESOURCE STATE
@@ -346,6 +347,7 @@ export function stepTick(sim, options = {}) {
   tickEnemies(sim);
   tickTurrets(sim);
   tickWalls(sim);
+  tickLabour(sim);
   tickBots(sim);
   tickBase(sim);
 
@@ -763,6 +765,28 @@ function tickBots(sim) {
       case 'DEPOSIT_STONE':
         tickStoneReturn(sim, bot);
         break;
+      case 'REPAIR': {
+        const wall = sim.walls?.find((w) => w.id === bot.wallId && w.alive);
+        if (wall) {
+          moveBotToward(bot, wall.x, wall.y);
+          tickRepair(sim, bot, wall);
+        } else {
+          bot.state = 'IDLE';
+          bot.wallId = null;
+        }
+        break;
+      }
+      case 'BUILD': {
+        const wall = sim.walls?.find((w) => w.id === bot.wallId && w.alive && w.building);
+        if (wall) {
+          moveBotToward(bot, wall.x, wall.y);
+          tickBuild(sim, bot, wall);
+        } else {
+          bot.state = 'IDLE';
+          bot.wallId = null;
+        }
+        break;
+      }
     }
   }
 }
@@ -776,6 +800,55 @@ function moveBotToward(bot, tx, ty) {
   const step = Math.min(bot.speed, dist);
   bot.x += (dx / dist) * step;
   bot.y += (dy / dist) * step;
+}
+
+/**
+ * Process one tick of wall repair by a bot.
+ * Bot must be at the wall to repair.
+ *
+ * @param {object} sim
+ * @param {object} bot
+ * @param {object} wall
+ */
+function tickRepair(sim, bot, wall) {
+  const dist = Math.sqrt((bot.x - wall.x) ** 2 + (bot.y - wall.y) ** 2);
+  if (dist > wall.radius + 0.5) return; // not close enough yet
+
+  // Repair the wall
+  const healAmount = 0.5; // WALL.repairRate per tick
+  wall.hp = Math.min(wall.maxHp, wall.hp + healAmount);
+
+  // If fully repaired, bot goes idle
+  if (wall.hp >= wall.maxHp) {
+    bot.state = 'IDLE';
+    bot.wallId = null;
+  }
+}
+
+/**
+ * Process one tick of wall construction by a bot.
+ * Bot must be at the wall to build.
+ *
+ * @param {object} sim
+ * @param {object} bot
+ * @param {object} wall
+ */
+function tickBuild(sim, bot, wall) {
+  const dist = Math.sqrt((bot.x - wall.x) ** 2 + (bot.y - wall.y) ** 2);
+  if (dist > wall.radius + 0.5) return; // not close enough yet
+
+  // Progress the build
+  wall.buildProgress = (wall.buildProgress || 0) + 1;
+
+  if (wall.buildProgress >= wall.buildTicks) {
+    // Build complete
+    wall.building = false;
+    wall.buildProgress = 0;
+    wall.builderId = null;
+    wall.hp = wall.maxHp;
+    bot.state = 'IDLE';
+    bot.wallId = null;
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -854,6 +927,20 @@ function tickDayCycle(sim) {
  * @returns {{ harvesting: number, returning: number, repairing: number, building: number, tilling: number, idle: number }}
  */
 export function getLabourSummary(sim) {
+  // If the labour system provided a summary, use it directly
+  if (sim.labourSummary) {
+    return {
+      harvesting: sim.labourSummary.harvestingBots || 0,
+      returning: 0,
+      repairing: sim.labourSummary.repairingBots || 0,
+      building: sim.labourSummary.buildingBots || 0,
+      tilling: 0,
+      idle: sim.labourSummary.idleBots || 0,
+      crisisActive: sim.labourSummary.crisisActive || false,
+      jobsAvailable: sim.labourSummary.jobsAvailable || 0,
+    };
+  }
+
   const summary = {
     harvesting: 0,
     returning: 0,
@@ -861,6 +948,8 @@ export function getLabourSummary(sim) {
     building: 0,
     tilling: 0,
     idle: 0,
+    crisisActive: sim.crisisActive || false,
+    jobsAvailable: 0,
   };
 
   for (const bot of sim.bots) {
@@ -871,6 +960,12 @@ export function getLabourSummary(sim) {
         break;
       case 'RETURN_STONE':
         summary.returning++;
+        break;
+      case 'REPAIR':
+        summary.repairing++;
+        break;
+      case 'BUILD':
+        summary.building++;
         break;
       case 'IDLE':
         summary.idle++;

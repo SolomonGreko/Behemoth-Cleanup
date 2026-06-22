@@ -1,7 +1,7 @@
 # Behemoth — Tower Defense Game
 
-> **Phase**: Core Systems (Day 1 complete — all core engine, rendering, lore, and frontend systems built)
-> **Last updated**: 2026-06-22 21:19 UTC
+> **Phase**: Core Systems (Day 1 complete — labour system v1, muzzle flash VFX, 364 tests)
+> **Last updated**: 2026-06-22 21:38 UTC
 > **Maintained by**: The Scribe (Hermes)
 
 ## Overview
@@ -84,6 +84,8 @@ docs/design/                       # Game design specs (Athena)
 - [x] **Bot speed tuned** — BOT.speed 0.025→0.015 (75% of scout — bots must be defended) (Athena)
 - [x] **Labour system design spec** — Full labour.js architecture at docs/design/labour-system-design.md (Athena)
 - [x] **Zeus unblock** — Integration test t_e4c7bcc2 unblocked, all 3 remediation children complete
+- [x] **Labour system v1** — Bot task allocation with dynamic scoring, crisis detection, stacking penalties; 69 new tests (Hephaestus)
+- [x] **Turret muzzle flash VFX** — Laser/mortar fire detection + expanding ring + core glow (Aphrodite)
 
 ### In Progress
 - [ ] **Enemy behavior visuals** — Crawler jitter VFX remaining (Aphrodite task t_6b2844e1)
@@ -93,7 +95,6 @@ docs/design/                       # Game design specs (Athena)
 - [ ] **Frontend integration tests** — React components exist but no component tests
 - [ ] **Stone zone generation** — World generation creates stone zones on map init
 - [ ] **Git push access** — Remote returns 403; commits are local only
-- [ ] **labour.js implementation** — Construction labour system stubbed but not built
 
 ### Known Issues
 - **Push access blocked** — Remote `https://github.com/SolomonGreko/Behemoth.git` returns 403; commits are local only
@@ -133,15 +134,16 @@ All tuning lives in `frontend/src/sim/config.js`:
 ## Tests
 
 ```
-Test Suites: 7
-Tests:       295 total — 295 passing
+Test Suites: 8
+Tests:       364 total — 364 passing
 ```
 - `resource.test.js` — 69 tests (resource accumulation, spending, caps)
-- `engine.test.js` — 58 tests (wave spawning, enemy movement, day/night, game-over, bot harvesting, wall siege, artillery behavior)
-- `turrets.test.js` — 37 tests (targeting, damage, upgrades, mounting, findTurretAt)
+- `engine.test.js` — 51 tests (wave spawning, enemy movement, day/night, game-over, bot harvesting, wall siege, artillery behavior, labour integration)
+- `turrets.test.js` — 51 tests (targeting, damage, upgrades, mounting, findTurretAt, muzzle flash)
 - `walls.test.js` — 66 tests (placement, damage, repair, upgrade, siege integration, engine purchase paths)
-- `resource-integration.test.js` — 28 tests (cross-module resource flows)
+- `resource-integration.test.js` — 30 tests (cross-module resource flows)
 - `security-adversarial.test.js` — 25 tests (overflow, injection, rate-limiting)
+- `labour.test.js` — 69 tests (job board, scoring, assignment, crisis detection, stacking, preemption)
 - `render.test.js` — 3 tests (drawDayNightOverlay regression — BUG-005 NaN guard)
 
 ## Pantheon Agents
