@@ -46,6 +46,151 @@ const processedDeaths = new Set();
 /** Max age in ticks before a death event is pruned. */
 const DEATH_PARTICLE_LIFE = 30;
 
+// ═══════════════════════════════════════════════════════════════════════
+// BOSS SHOCKWAVE VFX (Aphrodite — boss siege arrival)
+// ═══════════════════════════════════════════════════════════════════════
+
+/**
+ * Track active boss shockwave VFX.
+ * When _shockwaveFired toggles on a boss, we spawn an expanding ring.
+ * Key: boss.id, Value: { bornTick, x, y }
+ */
+const bossShockwaves = new Map();
+
+/** Duration of the shockwave ring expansion in ticks (~0.5s at 60 tps). */
+const BOSS_SHOCKWAVE_LIFE = 30;
+
+/**
+ * Register new boss shockwaves this frame.
+ * @param {object[]} enemies — sim.enemies array
+ * @param {number} tick
+ */
+function recordBossShockwaves(enemies, tick) {
+  for (const enemy of enemies) {
+    if (enemy.type !== 'boss' || !enemy.alive) continue;
+    if (enemy._shockwaveFired && !bossShockwaves.has(enemy.id)) {
+      bossShockwaves.set(enemy.id, {
+        bornTick: tick,
+        x: enemy.x,
+        y: enemy.y,
+      });
+    }
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// DAMAGE FLASH SYSTEM (Aphrodite — hit-feedback)
+// ═══════════════════════════════════════════════════════════════════════
+
+/**
+ * Previous HP snapshot per enemy — keyed by enemy.id.
+ * Compared against current HP each frame to detect damage taken.
+ */
+const prevEnemyHp = new Map();
+
+/**
+ * Active damage flashes. Keyed by enemy.id → { bornTick, color }.
+ * Flash fades over DAMAGE_FLASH_LIFE ticks.
+ */
+const damageFlashes = new Map();
+
+/** Duration of a damage flash in ticks (~133ms at 60 tps). */
+const DAMAGE_FLASH_LIFE = 8;
+
+/**
+ * Detect enemies that took damage this frame and register a flash.
+ * Called at the start of drawEnemies before drawing any live enemies.
+ *
+ * @param {object[]} enemies — sim.enemies array
+ * @param {number} tick — current sim tick
+ */
+function recordDamageFlashes(enemies, tick) {
+  // Prune expired flashes
+  for (const [id, flash] of damageFlashes) {
+    if (tick - flash.bornTick > DAMAGE_FLASH_LIFE) {
+      damageFlashes.delete(id);
+    }
+  }
+
+  for (const enemy of enemies) {
+    if (!enemy.alive) {
+      prevEnemyHp.delete(enemy.id);
+      continue;
+    }
+    const prev = prevEnemyHp.get(enemy.id);
+    if (prev !== undefined && prev > enemy.hp) {
+      // Enemies takes damage — register a flash
+      const visual = ENEMY_VISUAL[enemy.type] || ENEMY_VISUAL.scout;
+      damageFlashes.set(enemy.id, { bornTick: tick, color: visual.glowColor });
+    }
+    prevEnemyHp.set(enemy.id, enemy.hp);
+  }
+
+  // Periodically clean prevEnemyHp of dead enemies (every 300 ticks)
+  if (tick % 300 === 0 && prevEnemyHp.size > 500) {
+    const aliveIds = new Set(enemies.filter(e => e.alive).map(e => e.id));
+    for (const id of prevEnemyHp.keys()) {
+      if (!aliveIds.has(id)) prevEnemyHp.delete(id);
+    }
+  }
+}
+
+/**
+ * Draw a damage flash overlay on an enemy.
+ * Renders a brief white-hot pulse that fades over DAMAGE_FLASH_LIFE ticks.
+ * Uses the enemy type's glow color tinted toward white for a hit-spark feel
+ * — never pure white (anti-glare dark aesthetic).
+ *
+ * @param {CanvasRenderingContext2D} ctx
+ * @param {number} enemyId — the enemy's .id field
+ * @param {number} tick — current sim tick
+ * @param {number} sx, sy — screen-space center of the enemy
+ * @param {number} r — render radius in pixels
+ */
+function drawDamageFlash(ctx, enemyId, tick, sx, sy, r) {
+  const flash = damageFlashes.get(enemyId);
+  if (!flash) return;
+
+  const age = tick - flash.bornTick;
+  if (age > DAMAGE_FLASH_LIFE) {
+    damageFlashes.delete(enemyId);
+    return;
+  }
+
+  const lifeRatio = age / DAMAGE_FLASH_LIFE;  // 0 → 1
+
+  // Flash alpha: quick rise (0 to 0.45 at 20%), then slow fade
+  const peakAlpha = 0.4;
+  let alpha;
+  if (lifeRatio < 0.2) {
+    alpha = (lifeRatio / 0.2) * peakAlpha;         // 0 → 0.4
+  } else {
+    alpha = peakAlpha * (1 - (lifeRatio - 0.2) / 0.8);  // 0.4 → 0
+  }
+
+  if (alpha <= 0.01) return;
+
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+
+  // Outer flash glow ring — expands slightly then fades
+  const ringR = r * (1.0 + lifeRatio * 0.4);
+  const ringAlpha = alpha * 0.6;
+  ctx.beginPath();
+  ctx.arc(sx, sy, ringR, 0, Math.PI * 2);
+  ctx.fillStyle = hexToRgba(flash.color, ringAlpha);
+  ctx.fill();
+
+  // Inner hot core — warm cream-white, never pure #fff
+  const coreR = r * 0.55;
+  ctx.beginPath();
+  ctx.arc(sx, sy, coreR, 0, Math.PI * 2);
+  ctx.fillStyle = hexToRgba('#f5f0e8', alpha * 0.35);
+  ctx.fill();
+
+  ctx.restore();
+}
+
 /**
  * Record death particles when an enemy dies this frame.
  * Called from drawEnemies before drawing live enemies.
@@ -539,6 +684,12 @@ export function drawEnemies(ctx, sim, scale) {
   // Record deaths BEFORE drawing live enemies (so particles spawn same frame)
   recordDeathParticles(enemies, tick);
 
+  // Detect damage taken and register flashes
+  recordDamageFlashes(enemies, tick);
+
+  // Detect new boss shockwaves for VFX
+  recordBossShockwaves(enemies, tick);
+
   for (const enemy of enemies) {
     if (!enemy.alive) continue;
     drawEnemy(ctx, enemy, scale, tick);
@@ -565,29 +716,78 @@ export function drawEnemies(ctx, sim, scale) {
  */
 function drawEnemy(ctx, enemy, scale, tick) {
   const visual = ENEMY_VISUAL[enemy.type] || { color: '#888888', glowColor: '#aaaaaa', shape: 'dot' };
-  const sx = enemy.x * scale;
-  const sy = enemy.y * scale;
+
+  // ── Crawler smooth position jitter ──────────────────────────────
+  // Use _jitterX/_jitterY if the AI provides them; otherwise generate
+  // smooth deterministic wobble from enemy id + tick for a sinusoidal feel.
+  let jx = 0, jy = 0;
+  if (enemy.type === 'crawler') {
+    if (enemy._jitterX !== undefined && enemy._jitterY !== undefined) {
+      jx = enemy._jitterX;
+      jy = enemy._jitterY;
+    } else {
+      // Fallback: smooth seeded wobble — persists per crawler across ticks
+      const phase = ((enemy.id || 0) * 7919) % 360;
+      const amp = 0.3; // cells
+      const speed = 0.15; // radians per tick
+      jx = Math.sin(tick * speed + phase * 0.01745) * amp * 0.7;
+      jy = Math.cos(tick * speed + phase * 0.01745 + 1.3) * amp;
+    }
+  }
+
+  const sx = (enemy.x + jx) * scale;
+  const sy = (enemy.y + jy) * scale;
   const r = (enemy.size || 0.8) * scale;
 
   ctx.save();
 
   // ── Outer glow ──────────────────────────────────────────────────
-  ctx.shadowColor = visual.glowColor;
-  ctx.shadowBlur = r * 0.8;
+  let glowColor = visual.glowColor;
+  let shadowBlur = r * 0.8;
+
+  // Boss enrage: intensify glow, shift toward rose
+  if (enemy.type === 'boss' && enemy._enraged) {
+    glowColor = '#f472b6'; // rose
+    shadowBlur = r * 1.5;
+  }
+
+  ctx.shadowColor = glowColor;
+  ctx.shadowBlur = shadowBlur;
 
   switch (visual.shape) {
     case 'diamond':    drawDiamondShape(ctx, sx, sy, r, visual.color); break;
     case 'hexagon':    drawHexagonShape(ctx, sx, sy, r, visual.color); break;
     case 'cross':      drawCrossShape(ctx, sx, sy, r, visual.color); break;
     case 'dot':        drawDotShape(ctx, sx, sy, r, visual.color, enemy.type, tick); break;
-    case 'pentagram':  drawPentagramShape(ctx, sx, sy, r, visual.color); break;
+    case 'pentagram':  drawPentagramShape(ctx, sx, sy, r, visual.color, enemy._enraged); break;
     default:           drawDotShape(ctx, sx, sy, r, visual.color, enemy.type, tick);
+  }
+
+  // ── Tank taunt indicator ────────────────────────────────────────
+  if (enemy._taunted) {
+    const tauntColor = '#fbbf24'; // amber
+    ctx.shadowBlur = 0;
+    ctx.beginPath();
+    ctx.arc(sx, sy, r * 1.3, 0, Math.PI * 2);
+    ctx.strokeStyle = hexToRgba(tauntColor, 0.4);
+    ctx.lineWidth = Math.max(1.2, r * 0.08);
+    ctx.setLineDash([r * 0.4, r * 0.25]);
+    ctx.stroke();
+    ctx.setLineDash([]);
   }
 
   ctx.restore();
 
   // ── Health bar ──────────────────────────────────────────────────
   drawHealthBar(ctx, sx, sy, enemy.hp, enemy.maxHp, enemy.size || 0.8, scale);
+
+  // ── Boss enrage particle emanation (post-restore, float above) ──
+  if (enemy.type === 'boss' && enemy._enraged) {
+    drawEnrageParticles(ctx, sx, sy, r, tick);
+  }
+
+  // ── Damage flash overlay ────────────────────────────────────────
+  drawDamageFlash(ctx, enemy.id, tick, sx, sy, r);
 }
 
 // ═══════════════════════════════════════════════════════════════════════

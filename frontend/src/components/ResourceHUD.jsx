@@ -414,7 +414,7 @@ const labourStyles = {
     padding: '6px 12px',
     background: 'rgba(0, 0, 0, 0.65)',
     borderRadius: '8px',
-    fontFamily: \"'Courier New', monospace\",
+    fontFamily: "'Courier New', monospace",
     fontSize: '10px',
     color: '#e4e4e7',
     userSelect: 'none',

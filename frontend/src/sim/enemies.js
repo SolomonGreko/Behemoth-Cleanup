@@ -8,7 +8,7 @@
  * Drop is immediate — Crystal is credited on the same tick the enemy dies.
  */
 
-import { RESOURCE, SCALING, ARTILLERY } from './config.js';
+import { RESOURCE, SCALING, ARTILLERY, ENEMY_SCOUT, ENEMY_TANK, ENEMY_CRAWLER, ENEMY_BOSS } from './config.js';
 import { addResources } from './resource.js';
 
 /**
@@ -336,5 +336,332 @@ export function tickArtilleryEnemy(sim, enemy, damageWallFn, applyBaseDmgFn) {
     if (sim.sounds) {
       sim.sounds.push('mortar');
     }
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// SCOUT AI — Gap Detection + Weakest-Wall Preference
+// ═══════════════════════════════════════════════════════════════════════
+
+/**
+ * Tick scout-specific AI behaviors: gap detection and weakest-wall preference.
+ *
+ * Gap detection: every gapCheckInterval ticks, the scout tests perpendicular
+ * offsets from the direct path to base. If a flanking path intersects
+ * significantly less wall HP (by the gapThreshold ratio), the scout
+ * redirects toward the flank — creating emergent "probe and exploit"
+ * behavior without full pathfinding.
+ *
+ * Weakest-wall preference: when sieging a wall, the scout periodically
+ * checks if a nearby wall has lower HP and switches target. This rewards
+ * the player for maintaining uniform wall health.
+ *
+ * @param {object} sim — sim state
+ * @param {object} enemy — scout enemy entity
+ */
+export function tickScoutAI(sim, enemy) {
+  // ── Weakest-wall preference (during siege) ───────────────────
+  if (enemy.state === 'sieging' && enemy.siegeTargetId != null) {
+    const currentWall = sim.walls.find(
+      (w) => w.id === enemy.siegeTargetId && w.alive
+    );
+    if (currentWall && ENEMY_SCOUT.preferWeakestWall) {
+      const wallsInRange = sim.walls.filter(
+        (w) =>
+          w.alive &&
+          w.id !== currentWall.id &&
+          _dist(enemy.x, enemy.y, w.x, w.y) < enemy.size + (w.radius || 0.8) + 0.5
+      );
+      if (wallsInRange.length > 0) {
+        const weakest = wallsInRange.reduce((a, b) => (a.hp < b.hp ? a : b));
+        if (weakest.hp < currentWall.hp) {
+          enemy.siegeTargetId = weakest.id;
+        }
+      }
+    }
+    return; // don't run gap detection while sieging
+  }
+
+  // ── Gap detection (during movement) ─────────────────────────
+  if (enemy.state !== 'moving') return;
+
+  // Track gap scan timer
+  if (enemy._scoutGapTimer === undefined) enemy._scoutGapTimer = 0;
+  enemy._scoutGapTimer++;
+  if (enemy._scoutGapTimer < ENEMY_SCOUT.gapCheckInterval) return;
+  enemy._scoutGapTimer = 0;
+
+  const { baseCenter } = sim;
+  const dx = baseCenter.x - enemy.x;
+  const dy = baseCenter.y - enemy.y;
+  const dist = Math.sqrt(dx * dx + dy * dy);
+  if (dist < 1) return;
+
+  // Normal and perpendicular directions
+  const nx = dx / dist;
+  const ny = dy / dist;
+  const perpX = -ny;
+  const perpY = nx;
+
+  // Score direct path: total wall HP intersected
+  const directHP = _traceWallHP(sim, enemy.x, enemy.y, baseCenter.x, baseCenter.y);
+
+  // Test flanking offsets — try left and right by 2-3 cells
+  const offsets = [-3, -2, 2, 3];
+  let bestOffset = 0;
+  let bestHP = directHP;
+
+  for (const offset of offsets) {
+    const flankX = enemy.x + perpX * offset;
+    const flankY = enemy.y + perpY * offset;
+    const flankHP = _traceWallHP(sim, flankX, flankY, baseCenter.x, baseCenter.y);
+    if (flankHP < bestHP) {
+      bestHP = flankHP;
+      bestOffset = offset;
+    }
+  }
+
+  // Redirect if the best flank has significantly less wall HP
+  // gapThreshold = 0.20 → need at least 20% less wall HP to redirect
+  if (bestHP < directHP * (1 - ENEMY_SCOUT.gapThreshold)) {
+    enemy._flankOffset = bestOffset;
+    // Store flank waypoint — the movement system will bias toward it
+    enemy._flankWaypoint = {
+      x: enemy.x + perpX * bestOffset,
+      y: enemy.y + perpY * bestOffset,
+    };
+  } else {
+    enemy._flankOffset = 0;
+    enemy._flankWaypoint = null;
+  }
+}
+
+/**
+ * Compute total wall HP intersected by a line segment.
+ * Used by scout gap detection to compare path quality.
+ *
+ * @param {object} sim
+ * @param {number} fromX
+ * @param {number} fromY
+ * @param {number} toX
+ * @param {number} toY
+ * @returns {number} total HP of intersecting walls
+ */
+function _traceWallHP(sim, fromX, fromY, toX, toY) {
+  let totalHP = 0;
+  const dx = toX - fromX;
+  const dy = toY - fromY;
+  const sqDist = dx * dx + dy * dy;
+  if (sqDist === 0) return 0;
+  const dist = Math.sqrt(sqDist);
+
+  for (const wall of sim.walls) {
+    if (!wall.alive) continue;
+
+    const wdx = wall.x - fromX;
+    const wdy = wall.y - fromY;
+
+    // Project wall onto the line
+    const t = (wdx * dx + wdy * dy) / sqDist;
+    if (t < 0 || t > 1) continue; // wall is behind or beyond the segment
+
+    const projX = fromX + t * dx;
+    const projY = fromY + t * dy;
+    const perpDist = Math.sqrt((wall.x - projX) ** 2 + (wall.y - projY) ** 2);
+    const radius = wall.radius || 0.8;
+
+    if (perpDist <= radius + 0.3) {
+      totalHP += wall.hp;
+    }
+  }
+
+  return totalHP;
+}
+
+/**
+ * Euclidean distance between two points.
+ */
+function _dist(x1, y1, x2, y2) {
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+  return Math.sqrt(dx * dx + dy * dy);
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// TANK AI — Taunt Aura
+// ═══════════════════════════════════════════════════════════════════════
+
+/**
+ * Apply the tank's taunt aura — redirect nearby enemies to the tank's
+ * siege target wall.
+ *
+ * For each alive enemy within tauntRadius of the tank, if they're in
+ * 'moving' state, set them to 'sieging' the same wall the tank is attacking.
+ * This coordinates breaches and creates emergent tank-led pushes.
+ *
+ * Should be called in a pre-pass (before movement) so redirected enemies
+ * arrive at the wall within the same tick.
+ *
+ * @param {object} sim — sim state
+ * @param {object} tank — the tank enemy entity (must be sieging)
+ */
+export function tickTankAura(sim, tank) {
+  if (tank.state !== 'sieging' || tank.siegeTargetId == null) return;
+
+  const targetWall = sim.walls.find(
+    (w) => w.id === tank.siegeTargetId && w.alive
+  );
+  if (!targetWall) {
+    // Wall was destroyed — tank will resume moving next tick
+    tank.siegeTargetId = null;
+    tank.state = 'moving';
+    return;
+  }
+
+  const radius = ENEMY_TANK.tauntRadius;
+  const sqRadius = radius * radius;
+
+  for (const other of sim.enemies) {
+    if (!other.alive || other === tank) continue;
+    if (other.id === tank.id) continue;
+
+    // Only redirect enemies in 'moving' state that are close enough
+    if (other.state !== 'moving') continue;
+
+    const dx = other.x - tank.x;
+    const dy = other.y - tank.y;
+    if (dx * dx + dy * dy > sqRadius) continue;
+
+    // Redirect — join the tank's siege
+    other.state = 'sieging';
+    other.siegeTargetId = tank.siegeTargetId;
+    other._taunted = true; // marker for visual feedback / future use
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// CRAWLER AI — Stack Cap
+// ═══════════════════════════════════════════════════════════════════════
+
+/**
+ * Check if a crawler should skip sieging a wall due to the stack cap.
+ *
+ * When too many crawlers are already sieging a wall (≥ maxStackPerWall),
+ * additional crawlers should slide past rather than piling on. This prevents
+ * degenerate 80-crawler pileups that melt walls instantly.
+ *
+ * The crawler gets a lateral displacement if capped, creating emergent
+ * flank-around behavior.
+ *
+ * @param {object} sim — sim state
+ * @param {object} enemy — the crawler enemy
+ * @param {number} crawlerCountOnWall — how many crawlers are already sieging this wall
+ * @returns {boolean} true if the crawler should skip siege (stack capped)
+ */
+export function checkCrawlerStack(sim, enemy, crawlerCountOnWall) {
+  if (crawlerCountOnWall >= ENEMY_CRAWLER.maxStackPerWall) {
+    // Capped — slide laterally to bypass
+    const { baseCenter } = sim;
+    const dx = baseCenter.x - enemy.x;
+    const dy = baseCenter.y - enemy.y;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    if (dist > 0.1) {
+      // Perpendicular displacement
+      const perpX = -dy / dist;
+      const perpY = dx / dist;
+      const slideDir = crawlerCountOnWall % 2 === 0 ? 1 : -1; // alternate sides
+      enemy.x += perpX * slideDir * 0.5;
+      enemy.y += perpY * slideDir * 0.5;
+    }
+    return true; // skip siege — stay moving
+  }
+  return false;
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// BOSS AI — Enrage + Shockwave
+// ═══════════════════════════════════════════════════════════════════════
+
+/**
+ * Tick boss-specific AI: enrage check and first-contact shockwave.
+ *
+ * Enrage: when the boss drops below enrageHpThreshold fraction of max HP,
+ * its speed and damage are permanently multiplied. This creates a dramatic
+ * mid-fight shift — the player must survive the enraged second half.
+ *
+ * Shockwave: on the boss's first wall contact (transition to 'sieging'),
+ * all walls within shockwaveRadius take shockwaveDamage. This punishes the
+ * player for letting the boss reach the wall line at all.
+ *
+ * Call this at the start of processing a boss in tickEnemies(), before
+ * movement logic.
+ *
+ * @param {object} sim — sim state
+ * @param {object} enemy — the boss enemy entity
+ */
+export function tickBossAI(sim, enemy) {
+  // ── Enrage check ─────────────────────────────────────────────
+  if (!enemy._enraged && enemy.maxHp > 0) {
+    const hpFraction = enemy.hp / enemy.maxHp;
+    if (hpFraction <= ENEMY_BOSS.enrageHpThreshold) {
+      enemy._enraged = true;
+      enemy.speed *= ENEMY_BOSS.enrageSpeedMul;
+      enemy.damage *= ENEMY_BOSS.enrageDamageMul;
+
+      sim.debugLog.push({
+        msg: `BOSS ENRAGED! HP: ${enemy.hp.toFixed(0)}/${enemy.maxHp.toFixed(0)} — speed ×${ENEMY_BOSS.enrageSpeedMul}, damage ×${ENEMY_BOSS.enrageDamageMul}`,
+        tick: sim.tick,
+      });
+      if (sim.debugLog.length > 50) {
+        sim.debugLog = sim.debugLog.slice(-50);
+      }
+
+      if (sim.sounds) {
+        sim.sounds.push('boss_enrage');
+      }
+    }
+  }
+}
+
+/**
+ * Fire the boss shockwave — damages all walls within shockwaveRadius.
+ *
+ * Called by engine.js when the boss first contacts a wall line.
+ * One-time effect per boss (guarded by _shockwaveFired flag).
+ *
+ * @param {object} sim — sim state
+ * @param {object} boss — the boss enemy entity
+ * @param {Function} damageWallFn — function(sim, wall, damage) => { destroyed: bool }
+ */
+export function fireBossShockwave(sim, boss, damageWallFn) {
+  if (boss._shockwaveFired) return;
+
+  const radius = ENEMY_BOSS.shockwaveRadius;
+  const sqRadius = radius * radius;
+  let wallsHit = 0;
+
+  for (const wall of sim.walls) {
+    if (!wall.alive) continue;
+
+    const dx = wall.x - boss.x;
+    const dy = wall.y - boss.y;
+    if (dx * dx + dy * dy <= sqRadius) {
+      damageWallFn(sim, wall, ENEMY_BOSS.shockwaveDamage);
+      wallsHit++;
+    }
+  }
+
+  boss._shockwaveFired = true;
+
+  sim.debugLog.push({
+    msg: `BOSS SHOCKWAVE — ${ENEMY_BOSS.shockwaveDamage} dmg to ${wallsHit} walls within ${radius} cells`,
+    tick: sim.tick,
+  });
+  if (sim.debugLog.length > 50) {
+    sim.debugLog = sim.debugLog.slice(-50);
+  }
+
+  if (sim.sounds) {
+    sim.sounds.push('boss_shockwave');
   }
 }

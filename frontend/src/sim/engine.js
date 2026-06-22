@@ -17,7 +17,7 @@
  * @module engine
  */
 
-import { RESOURCE, COST, ECON, ENEMY, WAVE, SWARM, SCALING, BASE, DAY_CYCLE, BOT, LEVEL } from './config.js';
+import { RESOURCE, COST, ECON, ENEMY, WAVE, SWARM, SCALING, BASE, DAY_CYCLE, BOT, LEVEL, ENEMY_CRAWLER } from './config.js';
 import {
   addResources,
   buildResourceHUD,
@@ -37,7 +37,7 @@ import {
 } from './walls.js';
 import { generateStoneZones } from './world.js';
 import { assignStoneHarvest, tickStoneHarvest, tickStoneReturn } from './bots.js';
-import { tickArtilleryEnemy } from './enemies.js';
+import { tickArtilleryEnemy, tickScoutAI, tickTankAura, checkCrawlerStack, tickBossAI, fireBossShockwave } from './enemies.js';
 
 // ═══════════════════════════════════════════════════════════════════════
 // RESOURCE STATE
@@ -455,9 +455,20 @@ function getWaveComposition(waveNum) {
   const artyRatio = artyUnlocked ? (1.0 - scoutRatio - tankRatio) : 0;
   const spillover = 1.0 - scoutRatio - tankRatio - artyRatio; // >0 when arty locked
 
-  const scouts = Math.floor(actualCount * (scoutRatio + spillover * 0.6));
-  const tanks = Math.floor(actualCount * (tankRatio + spillover * 0.4));
-  const arty = artyUnlocked ? Math.max(0, actualCount - scouts - tanks) : 0;
+  let scouts = Math.floor(actualCount * (scoutRatio + spillover * 0.6));
+  let tanks = Math.floor(actualCount * (tankRatio + spillover * 0.4));
+  let arty = 0;
+
+  if (artyUnlocked) {
+    arty = Math.max(0, actualCount - scouts - tanks);
+  } else {
+    // When artillery is locked, absorb any rounding remainder into scouts
+    // (the dominant enemy type in early waves) so no enemy is silently dropped.
+    const remainder = actualCount - scouts - tanks;
+    if (remainder > 0) {
+      scouts += remainder;
+    }
+  }
 
   if (scouts > 0) groups.push({ type: 'scout', count: scouts });
   if (tanks > 0) groups.push({ type: 'tank', count: tanks });
@@ -556,22 +567,89 @@ function createEnemy(sim, type, spawnPoint, wave) {
 function tickEnemies(sim) {
   const { baseCenter } = sim;
 
+  // ═══════════════════════════════════════════════════════════════
+  // FIRST PASS — build crawler stack counts per wall
+  // ═══════════════════════════════════════════════════════════════
+  const crawlerCounts = new Map();
+  for (const enemy of sim.enemies) {
+    if (
+      enemy.alive &&
+      enemy.type === 'crawler' &&
+      enemy.state === 'sieging' &&
+      enemy.siegeTargetId != null
+    ) {
+      crawlerCounts.set(
+        enemy.siegeTargetId,
+        (crawlerCounts.get(enemy.siegeTargetId) || 0) + 1
+      );
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  // FIRST PASS — tank taunt auras
+  // ═══════════════════════════════════════════════════════════════
+  for (const enemy of sim.enemies) {
+    if (!enemy.alive) continue;
+    if (enemy.type === 'tank') {
+      tickTankAura(sim, enemy);
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  // SECOND PASS — enemy movement + type-specific AI
+  // ═══════════════════════════════════════════════════════════════
   for (const enemy of sim.enemies) {
     if (!enemy.alive) continue;
 
-    // Artillery enemies: run ranged attack behavior first.
-    // If they transition to 'firing', skip normal movement — they're
-    // stationary and shooting. If they stay in 'moving', fall through
-    // to normal movement so they can walk into range.
+    // ── Boss: enrage check ──────────────────────────────────
+    if (enemy.type === 'boss') {
+      tickBossAI(sim, enemy);
+    }
+
+    // ── Scout: gap detection + weakest-wall preference ──────
+    if (enemy.type === 'scout') {
+      tickScoutAI(sim, enemy);
+    }
+
+    // ── Artillery: ranged attack behavior ───────────────────
     if (enemy.type === 'artillery') {
       tickArtilleryEnemy(sim, enemy, damageWall, _applyBaseDamage);
       if (enemy.state === 'firing') continue;
     }
 
     if (enemy.state === 'moving') {
+      // ── Scout flank waypoint steering ────────────────────
+      if (enemy._flankWaypoint) {
+        const wdx = enemy._flankWaypoint.x - enemy.x;
+        const wdy = enemy._flankWaypoint.y - enemy.y;
+        const wdist = Math.sqrt(wdx * wdx + wdy * wdy);
+        if (wdist > 0.1) {
+          const fstep = Math.min(enemy.speed, wdist);
+          enemy.x += (wdx / wdist) * fstep;
+          enemy.y += (wdy / wdist) * fstep;
+          // Fall through to wall collision check after waypoint steer
+        } else {
+          // Reached waypoint — clear it
+          enemy._flankWaypoint = null;
+        }
+      }
+
       // Check for wall collision before moving
       const blockingWall = findBlockingWall(sim, enemy);
       if (blockingWall) {
+        // Crawler stack cap check
+        if (enemy.type === 'crawler') {
+          const count = crawlerCounts.get(blockingWall.id) || 0;
+          if (checkCrawlerStack(sim, enemy, count)) {
+            continue; // skip siege — keep moving
+          }
+        }
+
+        // Boss shockwave on first wall contact
+        if (enemy.type === 'boss') {
+          fireBossShockwave(sim, enemy, damageWall);
+        }
+
         enemy.state = 'sieging';
         enemy.siegeTargetId = blockingWall.id;
         continue;
@@ -601,14 +679,37 @@ function tickEnemies(sim) {
         enemy.x += (dx / dist) * step;
         enemy.y += (dy / dist) * step;
 
+        // Crawler smooth jitter (lerp-based, replaces raw random teleport)
         if (enemy.type === 'crawler') {
-          enemy.x += (Math.random() - 0.5) * SWARM.jitter * 2;
-          enemy.y += (Math.random() - 0.5) * SWARM.jitter * 2;
+          if (enemy._jitterX === undefined) {
+            enemy._jitterX = 0;
+            enemy._jitterY = 0;
+          }
+          const targetJitterX = (Math.random() - 0.5) * SWARM.jitter * 2;
+          const targetJitterY = (Math.random() - 0.5) * SWARM.jitter * 2;
+          const smooth = ENEMY_CRAWLER.jitterSmoothness;
+          enemy._jitterX += (targetJitterX - enemy._jitterX) * smooth;
+          enemy._jitterY += (targetJitterY - enemy._jitterY) * smooth;
+          enemy.x += enemy._jitterX;
+          enemy.y += enemy._jitterY;
         }
 
         // Check wall collision after movement
         const wall = findBlockingWall(sim, enemy);
         if (wall) {
+          // Crawler stack cap check
+          if (enemy.type === 'crawler') {
+            const count = crawlerCounts.get(wall.id) || 0;
+            if (checkCrawlerStack(sim, enemy, count)) {
+              continue; // skip siege — keep moving
+            }
+          }
+
+          // Boss shockwave on first wall contact
+          if (enemy.type === 'boss') {
+            fireBossShockwave(sim, enemy, damageWall);
+          }
+
           enemy.state = 'sieging';
           enemy.siegeTargetId = wall.id;
         }

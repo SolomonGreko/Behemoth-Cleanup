@@ -188,6 +188,90 @@ export const ARTILLERY = {
 };
 
 /**
+ * ENEMY_SCOUT — scout behavior tuning.
+ *
+ * Scouts are the common, fast, moderate-HP enemy (wave 1+). Their AI adds
+ * wall-gap detection — periodic heuristic checks for flanking paths around
+ * wall lines, creating emergent "probe and exploit" behavior without full A*.
+ *
+ * gapCheckInterval: ticks between gap scans. 30 ticks (0.5s) is frequent
+ *   enough to react to wall gaps before the wave passes, cheap enough for
+ *   20+ simultaneous scouts.
+ * gapThreshold: minimum path-length improvement to redirect. 0.20 (20%)
+ *   filters out diagonal-noise false positives while catching real wall gaps.
+ * preferWeakestWall: when multiple walls block the path, scouts target the
+ *   one with lowest current HP. Rewards uniform wall maintenance.
+ */
+export const ENEMY_SCOUT = {
+  gapCheckInterval: 30,      // ticks between wall-gap checks (0.5s at 60fps)
+  gapThreshold: 0.20,        // 20% path improvement to redirect
+  preferWeakestWall: true,   // target lowest-HP wall when sieging
+};
+
+/**
+ * ENEMY_TANK — tank behavior tuning.
+ *
+ * Tanks are slow, tough, hard-hitting enemies (wave 2+). They serve as
+ * line-breakers: they absorb turret fire and coordinate breaches via a
+ * "taunt" aura that redirects nearby enemies to the same wall segment.
+ *
+ * tauntRadius: cells around the tank where other enemies redirect to the
+ *   tank's siege target. 3.0 cells covers adjacent wall segments.
+ * tauntPriorityBoost: when true, tank-sieged walls get +1 priority in bot
+ *   REPAIR targeting — bots prioritize saving walls under tank siege.
+ */
+export const ENEMY_TANK = {
+  tauntRadius: 3.0,          // cells — other enemies join tank's siege target
+  tauntPriorityBoost: true,  // tank-sieged walls get +1 repair priority
+};
+
+/**
+ * ENEMY_CRAWLER — crawler behavior tuning.
+ *
+ * Crawlers are swarm enemies (wave 3, 6, 9...). Tiny, fast, fragile,
+ * numerous. Their AI focuses on wall-stacking limits and smooth jitter to
+ * prevent both degenerate gameplay (all-on-one-wall) and visual teleporting.
+ *
+ * maxStackPerWall: hard cap on crawlers sieging a single wall segment.
+ *   At 6 crawlers × 0.6 DPS = 3.6 combined DPS, an L2 wall (60 HP) survives
+ *   ~17 ticks — enough for turrets to respond. Prevents 80-crawler pileups.
+ * jitterSmoothness: lerp factor for sinusoidal position wobble. 0.05
+ *   produces organic spread without teleporting. Higher = wobblier.
+ */
+export const ENEMY_CRAWLER = {
+  maxStackPerWall: 6,        // max crawlers sieging one wall segment
+  jitterSmoothness: 0.05,    // lerp factor for smooth jitter
+};
+
+/**
+ * ENEMY_BOSS — boss behavior tuning.
+ *
+ * Bosses appear every 5 waves. Massive, high-HP, high-damage. A boss fight
+ * within the tower defense — enrage at 50% HP creates a dramatic mid-fight
+ * shift, and a one-time shockwave on first wall contact punishes the player
+ * for letting the boss reach the wall line.
+ *
+ * enrageHpThreshold: fraction of max HP. 0.50 means enrage triggers at
+ *   half-HP — late enough that the player is committed, early enough to
+ *   matter for the fight's second half.
+ * enrageSpeedMul: 1.50 speed boost. Noticeable (~50% faster advance) but
+ *   turrets can still track the boss.
+ * enrageDamageMul: 1.25 damage boost. Walls break 25% faster post-enrage.
+ * shockwaveDamage: 10 HP to all walls within shockwaveRadius. Chosen so
+ *   L1 walls (30 HP) survive with 20 HP, L2 walls (60 HP) survive with 50 HP
+ *   — damaged but not destroyed. One follow-up hit finishes them.
+ * shockwaveRadius: 3.0 cells covers adjacent wall segments. The boss arrival
+ *   damages the wall line, not just one segment.
+ */
+export const ENEMY_BOSS = {
+  enrageHpThreshold: 0.50,   // fraction of max HP to trigger enrage
+  enrageSpeedMul: 1.50,      // speed multiplier when enraged
+  enrageDamageMul: 1.25,     // damage multiplier when enraged
+  shockwaveDamage: 10,       // damage to walls within shockwaveRadius
+  shockwaveRadius: 3.0,      // cells — shockwave AoE on first siege
+};
+
+/**
  * SCALING — wave-based enemy stat scaling multipliers.
  *
  * Each wave increases enemy stats multiplicatively from their base values.
