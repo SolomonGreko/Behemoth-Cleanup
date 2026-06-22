@@ -1,7 +1,7 @@
 # Behemoth — Tower Defense Game
 
-> **Phase**: Core Systems (Day 1 complete — all core engine, rendering, and lore systems built)
-> **Last updated**: 2026-06-22 19:59 UTC
+> **Phase**: Core Systems (Day 1 complete — all core engine, rendering, lore, and frontend systems built)
+> **Last updated**: 2026-06-22 20:30 UTC
 > **Maintained by**: The Scribe (Hermes)
 
 ## Overview
@@ -12,7 +12,12 @@ Behemoth is a tower-defense game with a simulation-engine core. Players defend a
 
 ```
 frontend/
+  package.json                # React build system (react-scripts)
+  public/
+    index.html                # HTML entry point
   src/
+    App.js                    # React root — mounts BehemothGame, drives frame counter
+    index.js                  # ReactDOM entry point
     sim/                        # Pure simulation engine (no DOM/React)
       engine.js                 # Main game loop — stepTick orchestration
       resource.js               # Resource economy (canAfford, trySpend, addResources)
@@ -20,7 +25,7 @@ frontend/
       turrets.js                # Turret/watcher system (targeting, laser, mortar, upgrades)
       walls.js                  # Wall system (placement, damage, repair, upgrade, siege)
       bots.js                   # Worker bot management (harvesting, pathfinding)
-      enemies.js                # Enemy type definitions and behavior stubs
+      enemies.js                # Enemy types: AI behaviors (scout gap, tank taunt, crawler stack, boss enrage/shockwave, artillery ranged)
       world.js                  # World generation (terrain zones, base placement)
       labour.js                 # Labour/construction stubs
       render.js                 # Canvas rendering (background, enemies, turrets, walls, health bars)
@@ -62,9 +67,16 @@ docs/design/                       # Game design specs (Athena)
 - [x] **BUG-003 fix** — Artillery dead-wall targeting: re-acquire target every tick to prevent firing at destroyed walls
 - [x] **Enemy behaviors design spec** — Athena's design for scout/tank/artillery/crawler/boss type-specific AI behaviors
 - [x] **Lore** — 4 fallen bastions named, 5 Shroud-creature types, full arsenal narrative, Shroud-Tide day/night lore, Chime-Forged bots
+- [x] **Enemy behaviors v1** — Scout gap-detection AI (flank waypoint steering), Tank taunt-aura (coordinated breaches), Crawler stack-cap (prevents 80-crawler pileups), Boss enrage+shockwave (mid-fight shift + first-contact AoE)
+- [x] **Enemy config blocks** — ENEMY_SCOUT, ENEMY_TANK, ENEMY_CRAWLER, ENEMY_BOSS tuning with full JSDoc rationale (Athena)
+- [x] **Damage flash system** — Hit-feedback: type-tinted glow ring + warm cream-white core, quick-rise-slow-fade alpha curve over 8 ticks (Aphrodite)
+- [x] **Frontend build system** — package.json, index.html, App.js, index.js entry point; production build succeeds (60KB JS bundle) (Hephaestus)
+- [x] **BUG-004 fix** — Wave composition off-by-one: Math.floor rounding silently dropped up to 1 enemy per early wave; absorbed remainder into scouts (Apollo)
+- [x] **.gitignore** — node_modules/, build/, .vite/ excluded from tracking
+- [x] **Zeus gatekeep** — Enemy AI behaviors approved: 4/4 behaviors implemented, 276/276 tests pass
 
 ### In Progress
-- [ ] **Enemy behaviors v1** — Design spec written by Athena; implementation pending (scout pathing, tank, crawler, boss)
+- [ ] **Enemy behavior visuals** — Boss enrage glow, crawler jitter VFX, shockwave VFX (Aphrodite task t_6b2844e1)
 
 ### Next Up
 - [ ] **Frontend integration tests** — React components exist but no component tests
@@ -74,7 +86,7 @@ docs/design/                       # Game design specs (Athena)
 
 ### Known Issues
 - **Push access blocked** — Remote `https://github.com/SolomonGreko/Behemoth.git` returns 403; commits are local only
-- **Demeter gap scan** — Identified VISUAL_SPEC.md undecomposed, 2 force-completed tasks blocking 3 children (stale at time of scan; may have been resolved)
+- **Demeter gap scan (20:24 UTC)** — Created t_6b2844e1 (Aphrodite enemy behavior visuals). Board state: 3 blocked (t_41554111 review-gated→approved, t_98da4cee needs-morpheus git credentials, t_e4c7bcc2 awaiting 3 child bug fixes), 3 todo (bug remediation).
 
 ## Resources
 
@@ -93,6 +105,11 @@ All tuning lives in `frontend/src/sim/config.js`:
 - `ECON` — Starting values, bot defaults
 - `BOT` — Worker bot intrinsics (speed, size, max count, starting count)
 - `ENEMY` — 5 enemy types (scout, tank, artillery, crawler/skitterling, boss)
+- `ENEMY_SCOUT` — Scout gap-detection tuning (gapCheckInterval, gapThreshold, preferWeakestWall)
+- `ENEMY_TANK` — Tank taunt-aura tuning (tauntRadius, tauntPriorityBoost)
+- `ENEMY_CRAWLER` — Crawler stack-cap tuning (maxStackPerWall, jitterSmoothness)
+- `ENEMY_BOSS` — Boss enrage/shockwave tuning (enrageHpThreshold, speedMul, damageMul, shockwaveDamage, shockwaveRadius)
+- `ARTILLERY` — Artillery ranged-attack tuning
 - `SCALING` — Per-wave enemy stat multipliers (HP, speed, damage, crystal drop), HP cap
 - `WAVE` — Wave timing, enemy counts, composition ratios
 - `SWARM` — Swarm wave multipliers and frequency
