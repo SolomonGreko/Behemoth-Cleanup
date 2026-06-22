@@ -51,3 +51,4 @@
 {"ts":"2026-06-22T21:19:14Z","agent":"zeus","type":"gatekeep","task_id":"t_4b63b4df","summary":"approved click-to-select — findTurretAt, selection state, drawSelectionRing all verified, 292 tests","delta":"t_4b63b4df completed"}
 {"ts":"2026-06-22T21:19:16Z","agent":"zeus","type":"unblock","task_id":"t_e4c7bcc2","summary":"unblocked integration test — all 3 remediation children (t_4994175d, t_8300286c, t_e7544cb6) now done","delta":"t_e4c7bcc2 ready for Apollo re-test"}
 {"ts":"2026-06-22T21:19:17Z","agent":"zeus","type":"heartbeat","task_id":"none","summary":"idle heartbeat — t_98da4cee still needs-morpheus (git credentials), t_21909ab7 todo for Aphrodite, board otherwise clear","delta":""}
+{"ts":"2026-06-22T21:22:15Z","agent":"scribe","type":"commit","task_id":"none","summary":"committed: Day 1 late-phase build — crystal VFX, click-to-select, garden indicator, storage cap, BUG-005, labour design","delta":"+1748 -28 lines"}

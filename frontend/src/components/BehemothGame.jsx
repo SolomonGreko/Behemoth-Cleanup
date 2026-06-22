@@ -1610,6 +1610,158 @@ const styles = {
     transition: 'color 0.3s ease, opacity 0.3s ease, text-shadow 0.3s ease',
     cursor: 'default',
   },
+
+  // ── Inspect Panel (selected turret detail) ──────────────────────────
+
+  inspectPanel: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '5px',
+    padding: '8px 10px',
+    marginBottom: '6px',
+    background: 'rgba(107, 164, 199, 0.06)',
+    borderRadius: '6px',
+    border: '1px solid rgba(107, 164, 199, 0.25)',
+    fontFamily: \"'Courier New', monospace\",
+    userSelect: 'none',
+  },
+
+  inspectHeader: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingBottom: '4px',
+    borderBottom: '1px solid rgba(107, 164, 199, 0.12)',
+  },
+
+  inspectTitle: {
+    fontSize: '11px',
+    color: '#6ba4c7',
+    letterSpacing: '2px',
+    textTransform: 'uppercase',
+    fontWeight: 'bold',
+  },
+
+  inspectTypeTag: {
+    fontSize: '9px',
+    letterSpacing: '1.5px',
+    textTransform: 'uppercase',
+    fontWeight: 'bold',
+    padding: '1px 6px',
+    borderRadius: '3px',
+    border: '1px solid',
+  },
+
+  inspectIdRow: {
+    display: 'flex',
+    alignItems: 'baseline',
+    gap: '8px',
+  },
+
+  inspectId: {
+    fontSize: '14px',
+    fontWeight: 'bold',
+    fontVariantNumeric: 'tabular-nums',
+    letterSpacing: '1px',
+  },
+
+  inspectPos: {
+    fontSize: '9px',
+    color: '#71717a',
+    fontVariantNumeric: 'tabular-nums',
+  },
+
+  inspectHpRow: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+  },
+
+  inspectHpBarTrack: {
+    flex: 1,
+    height: '5px',
+    background: 'rgba(255, 255, 255, 0.08)',
+    borderRadius: '3px',
+    overflow: 'hidden',
+  },
+
+  inspectHpBarFill: {
+    height: '100%',
+    borderRadius: '3px',
+    transition: 'width 0.3s ease, background 0.3s ease',
+  },
+
+  inspectHpText: {
+    fontSize: '11px',
+    color: '#a1a1aa',
+    fontVariantNumeric: 'tabular-nums',
+    flexShrink: 0,
+    minWidth: '52px',
+    textAlign: 'right',
+    fontWeight: 'bold',
+  },
+
+  inspectStatsGrid: {
+    display: 'flex',
+    gap: '8px',
+    paddingTop: '2px',
+  },
+
+  inspectStat: {
+    flex: 1,
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    gap: '2px',
+    padding: '4px 4px',
+    background: 'rgba(255, 255, 255, 0.03)',
+    borderRadius: '4px',
+  },
+
+  inspectStatLabel: {
+    fontSize: '8px',
+    color: '#71717a',
+    letterSpacing: '1px',
+    textTransform: 'uppercase',
+  },
+
+  inspectStatValue: {
+    fontSize: '12px',
+    color: '#e4e4e7',
+    fontWeight: 'bold',
+    fontVariantNumeric: 'tabular-nums',
+  },
+
+  inspectCdTrack: {
+    width: '100%',
+    height: '3px',
+    background: 'rgba(255, 255, 255, 0.08)',
+    borderRadius: '2px',
+    overflow: 'hidden',
+    marginTop: '1px',
+  },
+
+  inspectCdFill: {
+    height: '100%',
+    borderRadius: '2px',
+    background: '#38bdf8',
+    transition: 'width 0.3s ease',
+  },
+
+  inspectBadgesRow: {
+    display: 'flex',
+    gap: '6px',
+    justifyContent: 'center',
+    paddingTop: '2px',
+  },
+
+  inspectDismiss: {
+    fontSize: '8px',
+    color: '#52525b',
+    textAlign: 'center',
+    fontStyle: 'italic',
+    paddingTop: '2px',
+  },
 };
 
 export default BehemothGame;
