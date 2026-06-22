@@ -340,3 +340,127 @@ const styles = {
 };
 
 export default ResourceHUD;
+
+// ═══════════════════════════════════════════════════════════════════════
+// BOT LABOUR HUD
+// ═══════════════════════════════════════════════════════════════════════
+
+/**
+ * Compact bot labour state display.
+ * Renders a single row of state indicators — only states with >0 bots.
+ *
+ * States:
+ *   HRV (amber)  — harvesting stone
+ *   RTR (sky)    — returning with stone
+ *   RPR (rose)   — repairing walls
+ *   BLD (emerald)— building
+ *   TIL (lime)   — tilling
+ *   IDL (zinc)   — idle
+ *
+ * @param {object} props
+ * @param {object} props.botLabour — { harvesting, returning, repairing, building, tilling, idle }
+ */
+export function BotLabourHUD({ botLabour }) {
+  if (!botLabour) return null;
+
+  const states = [
+    { key: 'harvesting', label: 'HRV', color: '#fbbf24', full: 'Harvesting' },
+    { key: 'returning',  label: 'RTR', color: '#38bdf8', full: 'Returning' },
+    { key: 'repairing',  label: 'RPR', color: '#fb7185', full: 'Repairing' },
+    { key: 'building',   label: 'BLD', color: '#34d399', full: 'Building' },
+    { key: 'tilling',    label: 'TIL', color: '#a3e635', full: 'Tilling' },
+    { key: 'idle',       label: 'IDL', color: '#71717a', full: 'Idle' },
+  ];
+
+  const active = states.filter((s) => botLabour[s.key] > 0);
+
+  // Nothing to show — hide the section entirely
+  if (active.length === 0) {
+    return null;
+  }
+
+  const total = states.reduce((sum, s) => sum + botLabour[s.key], 0);
+
+  return (
+    <div className="bot-labour-hud" style={labourStyles.container} role="region" aria-label="Bot activity">
+      <div style={labourStyles.header}>
+        <span style={labourStyles.headerLabel}>BOTS</span>
+        <span style={labourStyles.totalCount}>{total}</span>
+      </div>
+      <div style={labourStyles.row}>
+        {active.map((s) => (
+          <span
+            key={s.key}
+            className={`labour-state labour-state--${s.key}`}
+            style={labourStyles.chip}
+            title={`${s.full}: ${botLabour[s.key]} bot${botLabour[s.key] !== 1 ? 's' : ''}`}
+          >
+            <span style={{ ...labourStyles.label, color: s.color }}>{s.label}</span>
+            <span style={labourStyles.count}>{botLabour[s.key]}</span>
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── Labour Styles ───────────────────────────────────────────────────
+
+const labourStyles = {
+  container: {
+    display: 'inline-flex',
+    flexDirection: 'column',
+    gap: '3px',
+    padding: '6px 12px',
+    background: 'rgba(0, 0, 0, 0.65)',
+    borderRadius: '8px',
+    fontFamily: \"'Courier New', monospace\",
+    fontSize: '10px',
+    color: '#e4e4e7',
+    userSelect: 'none',
+    border: '1px solid rgba(255, 255, 255, 0.08)',
+  },
+
+  header: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+
+  headerLabel: {
+    fontSize: '8px',
+    color: '#71717a',
+    letterSpacing: '2px',
+    textTransform: 'uppercase',
+  },
+
+  totalCount: {
+    fontSize: '10px',
+    color: '#a1a1aa',
+    fontVariantNumeric: 'tabular-nums',
+  },
+
+  row: {
+    display: 'flex',
+    gap: '6px',
+    flexWrap: 'wrap',
+  },
+
+  chip: {
+    display: 'inline-flex',
+    alignItems: 'baseline',
+    gap: '2px',
+  },
+
+  label: {
+    fontSize: '9px',
+    fontWeight: 700,
+    letterSpacing: '0.5px',
+  },
+
+  count: {
+    fontSize: '9px',
+    color: '#d4d4d8',
+    fontVariantNumeric: 'tabular-nums',
+  },
+};

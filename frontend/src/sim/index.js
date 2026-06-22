@@ -7,7 +7,7 @@
  */
 
 // Config
-export { RESOURCE, COST, ECON } from './config.js';
+export { RESOURCE, COST, ECON, ENEMY, WAVE, SWARM, BASE, LEVEL, DAY_CYCLE, TURRET } from './config.js';
 
 // Policy module
 export {
@@ -26,6 +26,13 @@ export {
   resetResources,
   resourceTick,
   applyStorageUpgrade,
+  createSim,
+  stepTick,
+  getStats,
+  getLabourSummary,
+  getWavePreview,
+  buyBot,
+  buyWatcher,
 } from './engine.js';
 
 // Bot integration
@@ -70,3 +77,26 @@ export {
   checkAbilityAvailable,
   getAbilityCooldown,
 } from './behemoth.js';
+
+// Turret system
+export {
+  createWatcher,
+  upgradeToTurret,
+  addMortar,
+  mountOnWall,
+  findTarget,
+  tickTurrets,
+  getTurretSummary,
+  getTurretById,
+} from './turrets.js';
+
+// Canvas rendering
+export {
+  hexToRgba,
+  formatLabelFont,
+  formatLabelText,
+  drawBackground,
+  drawBase,
+  drawEnemies,
+  drawTurrets,
+} from './render.js';

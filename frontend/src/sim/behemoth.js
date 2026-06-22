@@ -26,8 +26,8 @@ export const ESSENCE_ABILITIES = {
 /**
  * Cooldown tracker for time-gated abilities.
  * Keyed by ability name, stores the tick when cooldown expires.
+ * Scoped to sim._abilityCooldowns to prevent cross-instance corruption.
  */
-const cooldowns = {};
 
 /**
  * Use an Essence ability.
@@ -44,6 +44,7 @@ export function useEssenceAbility(sim, ability) {
   }
 
   // Check cooldown
+  const cooldowns = sim._abilityCooldowns;
   const cooldownExpiry = cooldowns[ability] ?? 0;
   if (sim.tick < cooldownExpiry) {
     const remainingTicks = cooldownExpiry - sim.tick;
@@ -217,7 +218,7 @@ export function checkAbilityAvailable(sim, ability) {
   }
 
   // Check cooldown
-  const cooldownExpiry = cooldowns[ability] ?? 0;
+  const cooldownExpiry = sim._abilityCooldowns[ability] ?? 0;
   if (sim.tick < cooldownExpiry) {
     const remainingSec = Math.ceil((cooldownExpiry - sim.tick) / 60);
     return { available: false, reason: `Cooldown: ${remainingSec}s` };
@@ -249,7 +250,7 @@ export function checkAbilityAvailable(sim, ability) {
  * @returns {number} ticks remaining (0 if available)
  */
 export function getAbilityCooldown(sim, ability) {
-  const expiry = cooldowns[ability] ?? 0;
+  const expiry = sim._abilityCooldowns[ability] ?? 0;
   if (sim.tick >= expiry) return 0;
   return expiry - sim.tick;
 }
