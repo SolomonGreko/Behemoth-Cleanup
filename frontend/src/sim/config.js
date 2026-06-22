@@ -306,6 +306,9 @@ export const SCALING = {
   CRYSTAL_DROP_SCALE: 0.05,
   STEEL_SCALE: 0.08,        // kill-steel multiplier growth per wave (was 0.10)
   HP_CAP: 10.0,
+  CRAWLER_HP_SCALE: 0,      // override: crawlers stay one-shot kills (identity: individually weak, collectively strong)
+  // If undefined/null, crawlers use HP_SCALE (backward compat). Set to 0 to freeze
+  // crawler HP at base value — difficulty scales via count, not bullet-sponginess.
 };
 
 /**
