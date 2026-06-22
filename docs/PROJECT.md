@@ -1,7 +1,7 @@
 # Behemoth — Tower Defense Game
 
 > **Phase**: Core Systems (Day 1 complete — all core engine, rendering, lore, and frontend systems built)
-> **Last updated**: 2026-06-22 20:30 UTC
+> **Last updated**: 2026-06-22 20:40 UTC
 > **Maintained by**: The Scribe (Hermes)
 
 ## Overview
@@ -74,9 +74,10 @@ docs/design/                       # Game design specs (Athena)
 - [x] **BUG-004 fix** — Wave composition off-by-one: Math.floor rounding silently dropped up to 1 enemy per early wave; absorbed remainder into scouts (Apollo)
 - [x] **.gitignore** — node_modules/, build/, .vite/ excluded from tracking
 - [x] **Zeus gatekeep** — Enemy AI behaviors approved: 4/4 behaviors implemented, 276/276 tests pass
+- [x] **Day/night ambient overlay** — Full-canvas phase-tinted atmospheric overlay with smooth transitions, night vignette, and phase-specific composite operations (Aphrodite)
 
 ### In Progress
-- [ ] **Enemy behavior visuals** — Boss enrage glow, crawler jitter VFX, shockwave VFX (Aphrodite task t_6b2844e1)
+- [ ] **Enemy behavior visuals** — Crawler jitter VFX remaining (boss enrage glow and shockwave VFX complete) (Aphrodite task t_6b2844e1)
 
 ### Next Up
 - [ ] **Frontend integration tests** — React components exist but no component tests

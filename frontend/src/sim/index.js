@@ -127,4 +127,5 @@ export {
   drawTurrets,
   drawBots,
   drawWalls,
+  drawDayNightOverlay,
 } from './render.js';

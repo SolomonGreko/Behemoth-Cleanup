@@ -1579,3 +1579,136 @@ function drawWall(ctx, wall, scale, tick) {
   // ── Health bar ────────────────────────────────────────────────────
   drawHealthBar(ctx, sx, sy, wall.hp, wall.maxHp, (wall.radius || 0.8) * 1.5, scale);
 }
+
+// ═══════════════════════════════════════════════════════════════════════
+// DAY/NIGHT AMBIENT OVERLAY (Aphrodite — atmospheric final pass)
+// ═══════════════════════════════════════════════════════════════════════
+
+/**
+ * Day/night phase ambient overlay tints per phase.
+ *
+ * Each phase has a tint color, alpha ceiling, and composite operation.
+ * The overlay is the final render pass — it sits above all entities
+ * and transforms the emotional register of the entire scene.
+ *
+ * Composite operation choices:
+ *   - 'multiply' for night: darkens everything, deepens shadows
+ *   - 'overlay' for dusk: rich orange-blue tension, contrast boost
+ *   - 'source-atop' with alpha for dawn: warm wash
+ *   - plain alpha fill for day: barely-there, doesn't flatten contrast
+ */
+const PHASE_AMBIENT = {
+  dawn:  { color: '#F4A460', alpha: 0.10, composite: 'source-atop', desc: 'warm amber wash — the wardstone stirs' },
+  day:   { color: '#FFF8E7', alpha: 0.03, composite: 'source-over', desc: 'barely-there warmth — safe, bright' },
+  dusk:  { color: '#FF6B35', alpha: 0.14, composite: 'overlay',     desc: 'deepening orange-blue — the Shroud gathers' },
+  night: { color: '#0a0a20', alpha: 0.22, composite: 'multiply',    desc: 'deep midnight — darkness absolute' },
+};
+
+/**
+ * Draw the day/night ambient overlay as the final render pass.
+ *
+ * Applies a full-canvas phase-tinted overlay with smooth transitions
+ * between phases (using hud.phaseBlend). The overlay sits above all
+ * entity drawing — background, base, enemies, turrets, bots, walls,
+ * particles, shockwaves — and below any HUD/UI chrome (which renders
+ * in the React DOM layer, not on the canvas).
+ *
+ * Night uses 'multiply' composite mode which preserves entity glow
+ * effects (shadowBlur, lighter-mode flashes) while darkening the
+ * background. This creates a natural "glow pops at night" effect
+ * without any entity-specific logic.
+ *
+ * A subtle vignette darkening is applied at night to draw the eye
+ * toward the center (the base) and create a claustrophobic feel.
+ *
+ * Called once per frame, after all entity draw calls, before the
+ * canvas is presented to the DOM.
+ *
+ * @param {CanvasRenderingContext2D} ctx
+ * @param {number} canvasW — canvas pixel width
+ * @param {number} canvasH — canvas pixel height
+ * @param {object} sim — sim state (reads sim.hud)
+ * @param {number} tick — current sim tick (for subtle pulsing)
+ */
+export function drawDayNightOverlay(ctx, canvasW, canvasH, sim, tick) {
+  const { hud } = sim;
+  if (!hud?.dayPhase) return;
+
+  const fromKey = hud.dayPhase;
+  const from = PHASE_AMBIENT[fromKey] || PHASE_AMBIENT.day;
+
+  // Blend toward next phase
+  const phaseIdx = DAY_CYCLE.phaseOrder.indexOf(fromKey);
+  const nextKey = DAY_CYCLE.phaseOrder[(phaseIdx + 1) % 4];
+  const to = PHASE_AMBIENT[nextKey] || PHASE_AMBIENT.day;
+  const blend = hud.phaseBlend ?? 0;
+
+  // Lerp color channels
+  const fc = hexToRgb(from.color);
+  const tc = hexToRgb(to.color);
+  const rc = Math.round(fc.r + (tc.r - fc.r) * blend);
+  const gc = Math.round(fc.g + (tc.g - fc.g) * blend);
+  const bc = Math.round(fc.b + (tc.b - fc.b) * blend);
+
+  // Lerp alpha
+  const alpha = from.alpha + (to.alpha - from.alpha) * blend;
+
+  // Composite mode: use the dominant mode (from), transition at blend > 0.5
+  const composite = blend < 0.5 ? from.composite : to.composite;
+
+  if (alpha < 0.005) return; // invisible — skip
+
+  ctx.save();
+
+  // ── Main phase tint fill ────────────────────────────────────────
+  ctx.globalCompositeOperation = composite;
+  ctx.fillStyle = `rgba(${rc}, ${gc}, ${bc}, ${alpha})`;
+  ctx.fillRect(0, 0, canvasW, canvasH);
+
+  // ── Night vignette: radial darkening toward edges ────────────────
+  // Only active during night and night-leaning transitions.
+  // Uses screen-space center-of-mass (baseCenter) if available,
+  // else falls back to canvas center.
+  const nightWeight = fromKey === 'night' ? (1 - blend)
+    : nextKey === 'night' ? blend
+    : 0;
+
+  if (nightWeight > 0.05) {
+    // Base center for vignette origin
+    const bcx = (sim.baseCenter?.x ?? sim.worldWidth / 2) * (canvasW / (sim.worldWidth || 50));
+    const bcy = (sim.baseCenter?.y ?? sim.worldHeight / 2) * (canvasH / (sim.worldHeight || 50));
+    const maxDim = Math.max(canvasW, canvasH);
+
+    ctx.globalCompositeOperation = 'multiply';
+
+    const vignette = ctx.createRadialGradient(
+      bcx, bcy, maxDim * 0.1,
+      canvasW / 2, canvasH / 2, maxDim * 0.75
+    );
+    const vAlpha = nightWeight * 0.35; // max 35% edge darkening at full night
+    vignette.addColorStop(0, 'rgba(0, 0, 0, 0)');
+    vignette.addColorStop(0.4, `rgba(0, 0, 10, ${vAlpha * 0.3})`);
+    vignette.addColorStop(0.75, `rgba(0, 0, 10, ${vAlpha * 0.8})`);
+    vignette.addColorStop(1, `rgba(0, 0, 10, ${vAlpha})`);
+
+    ctx.fillStyle = vignette;
+    ctx.fillRect(0, 0, canvasW, canvasH);
+  }
+
+  ctx.restore();
+}
+
+/**
+ * Parse a hex color string into { r, g, b } integer components.
+ *
+ * @param {string} hex — '#rrggbb'
+ * @returns {{ r: number, g: number, b: number }}
+ */
+function hexToRgb(hex) {
+  const h = hex.replace('#', '');
+  return {
+    r: parseInt(h.substring(0, 2), 16),
+    g: parseInt(h.substring(2, 4), 16),
+    b: parseInt(h.substring(4, 6), 16),
+  };
+}
