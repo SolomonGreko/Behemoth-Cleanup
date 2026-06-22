@@ -293,7 +293,7 @@ export function upgradeWall(wall) {
  */
 export function getWallCost(level) {
   switch (level) {
-    case 0: return { stone: 0 };            // L1 — free starter wall
+    case 0: return { stone: WALL.cost };   // L1 — cost from config
     case 1: return { stone: 30 };           // L2
     case 2: return { stone: 80, crystal: 5 };  // L3
     case 3: return { stone: 150, crystal: 15 }; // L4

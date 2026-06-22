@@ -14,7 +14,7 @@
  *   - Deposit at base center (1.5 cell range).
  */
 
-import { RESOURCE } from './config.js';
+import { BOT, RESOURCE } from './config.js';
 import { addResources } from './resource.js';
 
 // ── Bot State Machine Extension ─────────────────────────────────────
@@ -135,7 +135,7 @@ export function tickStoneHarvest(sim, bot) {
 
   if (bot.harvestProgress >= bot.harvestTarget) {
     // Harvest complete
-    bot.carryingStone = RESOURCE.stone.harvestAmount; // 1 Stone
+    bot.carryingStone = BOT.carry; // harvest capacity from config
     bot.state = BOT_STATES.RETURN_STONE;
     // Release the zone so another bot can claim it
     releaseStoneZone(sim, bot);

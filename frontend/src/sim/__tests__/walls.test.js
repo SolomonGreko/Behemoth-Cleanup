@@ -490,9 +490,9 @@ describe('walls — upgradeWall', () => {
 // ═══════════════════════════════════════════════════════════════════════
 
 describe('walls — getWallCost', () => {
-  it('L1 is free', () => {
+  it('L1 costs WALL.cost (8) Stone', () => {
     const cost = getWallCost(0);
-    expect(cost.stone).toBe(0);
+    expect(cost.stone).toBe(WALL.cost);
     expect(cost.crystal).toBeUndefined();
   });
 

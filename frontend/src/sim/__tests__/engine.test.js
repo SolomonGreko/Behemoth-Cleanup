@@ -208,7 +208,7 @@ describe('engine — wave composition', () => {
     const crawlers = sim.waveComposition.find((g) => g.type === 'crawler');
     expect(boss).toBeDefined();
     expect(crawlers).toBeDefined();
-    expect(boss.count).toBe(1);
+    expect(boss.count).toBe(3); // WAVE.COUNTS[15] = [3,3,2,3] → 3 bosses
     expect(crawlers.count).toBeGreaterThan(0);
     expect(crawlers.count).toBeLessThan(80);
   });
@@ -243,7 +243,7 @@ describe('engine — swarm creep', () => {
     // Wave 20 is a boss wave — boss-only composition, no creep crawlers
     expect(sim.waveComposition).toHaveLength(1);
     expect(sim.waveComposition[0].type).toBe('boss');
-    expect(sim.waveComposition[0].count).toBe(1);
+    expect(sim.waveComposition[0].count).toBe(4); // WAVE.COUNTS[20] = [4,4,3,4] → 4 bosses
   });
 
   it('creep does NOT fire for wave 21 (swarm wave takes priority)', () => {
@@ -328,6 +328,34 @@ describe('engine — swarm creep', () => {
       expect(crawlers.count).toBeLessThanOrEqual(SWARM.creep.capPerWave);
     } finally {
       SWARM.creep.fraction = originalFraction;
+    }
+  });
+
+  it('creep fires for table-driven wave 16 when startWave lowered (BUG-008 regression)', () => {
+    const originalStartWave = SWARM.creep.startWave;
+    SWARM.creep.startWave = 16; // wave 16 uses WAVE.COUNTS table [6,5,3,0]
+    try {
+      const sim = sim10x10();
+      // Wave 16: 16%5=1 (not boss), 16%3=1 (not swarm), 16%15=1 (not bossAndSwarm) → normal
+      runWavesUntil(sim, 16);
+      expect(sim.wave).toBe(16);
+      expect(sim.swarmActive).toBe(false);
+      // Table entry: [6,5,3,0] → actualCount = 14
+      // creepCount = floor(14 * 0.10) = 1
+      const crawlers = sim.waveComposition.find(g => g.type === 'crawler');
+      expect(crawlers).toBeDefined();
+      expect(crawlers.count).toBeGreaterThan(0);
+      // Verify table composition intact (scouts + tanks + arty = 14, minus 1 creep = 13 + 1 crawler)
+      const scouts = sim.waveComposition.find(g => g.type === 'scout');
+      const tanks = sim.waveComposition.find(g => g.type === 'tank');
+      const arty = sim.waveComposition.find(g => g.type === 'artillery');
+      expect(scouts).toBeDefined();
+      expect(tanks).toBeDefined();
+      expect(arty).toBeDefined();
+      const total = sim.waveComposition.reduce((sum, g) => sum + g.count, 0);
+      expect(total).toBe(14);
+    } finally {
+      SWARM.creep.startWave = originalStartWave;
     }
   });
 });
@@ -700,18 +728,24 @@ describe('engine — artillery behavior', () => {
     expect(wallDmgDealt).toBe(ARTILLERY.attackDamage);
   });
 
-  it('artillery excluded from waves 1-3, present wave 4+', () => {
+  it('artillery excluded from waves 1-7, present wave 8+', () => {
     // Wave 1: no artillery
     const sim1 = sim10x10();
     stepTicks(sim1, WAVE.cooldownTicks); // start wave 1
     const hasArty1 = sim1.waveComposition.some(g => g.type === 'artillery');
     expect(hasArty1).toBe(false);
 
-    // Wave 4: artillery should appear
-    const sim4 = sim10x10();
-    runWavesUntil(sim4, 4);
-    const hasArty4 = sim4.waveComposition.some(g => g.type === 'artillery');
-    expect(hasArty4).toBe(true);
+    // Wave 7: still no artillery per WAVE.COUNTS
+    const sim7 = sim10x10();
+    runWavesUntil(sim7, 7);
+    const hasArty7 = sim7.waveComposition.some(g => g.type === 'artillery');
+    expect(hasArty7).toBe(false);
+
+    // Wave 8: artillery first appears per WAVE.COUNTS[8] = [4,2,1,0]
+    const sim8 = sim10x10();
+    runWavesUntil(sim8, 8);
+    const hasArty8 = sim8.waveComposition.some(g => g.type === 'artillery');
+    expect(hasArty8).toBe(true);
   });
 
   it('artillery re-acquires base when target wall dies mid-cooldown', () => {

@@ -23,8 +23,9 @@
  * @module turrets
  */
 
-import { TURRET } from './config.js';
+import { TURRET, SCALING } from './config.js';
 import { processCrystalDrop } from './enemies.js';
+import { addResources } from './resource.js';
 
 // ═══════════════════════════════════════════════════════════════════════
 // TURRET CREATION
@@ -242,6 +243,13 @@ function handleEnemyKill(sim, enemy) {
 
   // Crystal drop
   processCrystalDrop(sim, enemy);
+
+  // Kill stone reward — scaled by wave using SCALING.STEEL_SCALE
+  // Base 1 stone per kill, multiplied by (1 + STEEL_SCALE * (wave - 1))
+  if (enemy.wave != null && enemy.wave > 0) {
+    const steelReward = 1 + SCALING.STEEL_SCALE * (enemy.wave - 1);
+    addResources(sim, { stone: Math.round(steelReward) });
+  }
 
   // Debug log
   sim.debugLog.push({

@@ -74,6 +74,7 @@ export function resourceTick(sim, options = {}) {
   const { isFrozen = false } = options;
 
   accumulateEssence(sim, isFrozen);
+  accumulateStone(sim, isFrozen);
 
   if (sim.tick % 60 === 0) {
     sim.resourceHistory.push({
@@ -142,6 +143,30 @@ function accumulateEssence(sim, isFrozen) {
     if (sim.resources.essence >= sim.resourceCaps.essence) {
       sim.essenceAccum = 0.0;
     }
+  }
+}
+
+/**
+ * Accumulate passive Stone income from the base (BASE.steelPerTick).
+ * Uses the same fractional-accumulation pattern as accumulateEssence.
+ * @param {object} sim
+ * @param {boolean} isFrozen — true during FD cutscene
+ */
+function accumulateStone(sim, isFrozen) {
+  if (isFrozen) return;
+
+  if (sim.resources.stone >= sim.resourceCaps.stone) {
+    sim._stoneAccum = 0.0;
+    return;
+  }
+
+  if (!sim._stoneAccum) sim._stoneAccum = 0.0;
+  sim._stoneAccum += BASE.steelPerTick;
+
+  const whole = Math.floor(sim._stoneAccum);
+  if (whole > 0) {
+    sim._stoneAccum -= whole;
+    addResources(sim, { stone: whole });
   }
 }
 
@@ -431,30 +456,60 @@ function startNextWave(sim) {
   }
 }
 
+/**
+ * Get hardcoded enemy counts for waves 1–20 from WAVE.COUNTS config.
+ * Returns [scouts, tanks, artillery, bosses] or null for waves > 20.
+ */
+function getWaveCounts(waveNum) {
+  if (WAVE.COUNTS && WAVE.COUNTS[waveNum]) {
+    return WAVE.COUNTS[waveNum];
+  }
+  return null;
+}
+
 function getWaveComposition(waveNum) {
   const groups = [];
   const bossWave = waveNum % WAVE.bossInterval === 0;
   const swarmWave = isSwarmWave(waveNum);
   const bossAndSwarm = waveNum % (WAVE.bossInterval * SWARM.interval) === 0;
 
+  // ── Boss waves (non-swarm) ──────────────────────────────────────
   if (bossWave && !bossAndSwarm) {
-    groups.push({ type: 'boss', count: 1 });
+    const table = getWaveCounts(waveNum);
+    const bossCount = table ? table[3] : 1; // table[3] = bosses column
+    groups.push({ type: 'boss', count: Math.max(1, bossCount) });
     return groups;
   }
 
-  if (swarmWave) {
+  // ── Pure swarm waves ────────────────────────────────────────────
+  if (swarmWave && !bossAndSwarm) {
     groups.push({ type: 'crawler', count: getSwarmCount(waveNum) });
     return groups;
   }
 
+  // ── Boss+swarm coincidence ──────────────────────────────────────
   if (bossAndSwarm) {
-    groups.push({ type: 'boss', count: 1 });
+    const table = getWaveCounts(waveNum);
+    const bossCount = table ? table[3] : 1;
+    groups.push({ type: 'boss', count: Math.max(1, bossCount) });
     groups.push({ type: 'crawler', count: Math.max(1, Math.floor(getSwarmCount(waveNum) * SWARM.bossAddFraction)) });
     return groups;
   }
 
-  const baseCount = WAVE.baseSpawnCount + (waveNum - 1) * WAVE.spawnCountGrowth;
-  const actualCount = Math.min(baseCount, 40);
+  // ── Normal waves — use WAVE.COUNTS table (1-20) or formulaic fallback (21+) ──
+  const table = getWaveCounts(waveNum);
+  let actualCount = 0; // total enemy count (used by swarm creep below)
+  if (table) {
+    const [scouts, tanks, arty, bosses] = table;
+    if (scouts > 0) groups.push({ type: 'scout', count: scouts });
+    if (tanks > 0) groups.push({ type: 'tank', count: tanks });
+    if (arty > 0) groups.push({ type: 'artillery', count: arty });
+    if (bosses > 0) groups.push({ type: 'boss', count: bosses });
+    actualCount = scouts + tanks + arty + bosses;
+  } else {
+    // ── Formulaic fallback (waves 21+) ──────────────────────────────
+    const baseCount = WAVE.baseSpawnCount + (waveNum - 1) * WAVE.spawnCountGrowth;
+    actualCount = Math.min(baseCount, 40);
 
   const waveTier = Math.floor(waveNum / 5);
   const scoutRatio = Math.max(0.2, 0.6 - waveTier * 0.1);
@@ -483,8 +538,10 @@ function getWaveComposition(waveNum) {
   if (scouts > 0) groups.push({ type: 'scout', count: scouts });
   if (tanks > 0) groups.push({ type: 'tank', count: tanks });
   if (arty > 0) groups.push({ type: 'artillery', count: arty });
+  } // end else (formulaic fallback)
 
   // --- SWARM CREEP injection (late-game crawler escorts) ---
+  // Applies to both table-driven waves (1-20) and formulaic fallback (21+).
   if (
     !bossWave && !swarmWave && !bossAndSwarm &&
     SWARM.creep && SWARM.creep.enabled &&
