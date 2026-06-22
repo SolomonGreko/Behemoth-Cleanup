@@ -142,6 +142,20 @@ function spawnCrystalDrops(enemy, tick) {
 const prevEnemyHp = new Map();
 
 /**
+ * Crawler trail particles for swarm motion-blur / skitter effect.
+ * Map of crawler.enemy.id → [{ x, y, bornTick }]
+ * Trails render as small fading dots behind the crawler, creating
+ * a sense of speed and organic swarm movement. Pruned each frame.
+ */
+const crawlerTrails = new Map();
+
+/** Max age of a crawler trail dot in ticks (~200ms at 60 tps). */
+const CRAWLER_TRAIL_LIFE = 12;
+
+/** Spawn a trail dot every N ticks per crawler (throttle prevents clutter). */
+const CRAWLER_TRAIL_INTERVAL = 3;
+
+/**
  * Active damage flashes. Keyed by enemy.id → { bornTick, color }.
  * Flash fades over DAMAGE_FLASH_LIFE ticks.
  */
@@ -659,6 +673,178 @@ export function drawBackground(ctx, canvasW, canvasH, sim, scale) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
+// STONE HARVEST ZONE RENDERING
+// ═══════════════════════════════════════════════════════════════════════
+
+/**
+ * Draw stone harvest zones as rocky terrain patches on the game canvas.
+ *
+ * Iterates the world grid and renders rocky terrain on cells tagged
+ * `harvestable: 'stone'`. Each stone cell gets a cluster of 2-4 irregular
+ * angular rock shapes in earthy gray/brown tones — quarried stone, not
+ * scrap metal. Visually distinct from car wreck debris.
+ *
+ * Rendering is deterministic (seeded from cell coordinates only) so rocks
+ * appear static and grounded frame-to-frame. Stone zones render at terrain
+ * level — below the base, walls, and all entities.
+ *
+ * Called once per frame after drawBackground, before drawBase.
+ *
+ * @param {CanvasRenderingContext2D} ctx
+ * @param {object} sim — sim state (reads sim.world.grid, sim.world.width/height)
+ * @param {number} scale — pixels per cell
+ */
+export function drawStoneZones(ctx, sim, scale) {
+  const { world } = sim;
+  if (!world?.grid) return;
+
+  const cellSize = scale;
+
+  for (let y = 0; y < world.height; y++) {
+    const row = world.grid[y];
+    if (!row) continue;
+
+    for (let x = 0; x < world.width; x++) {
+      const cell = row[x];
+      if (!cell || cell.harvestable !== 'stone') continue;
+
+      const px = x * cellSize;
+      const py = y * cellSize;
+
+      // Deterministic seed from cell coordinates (NOT tick —
+      // stone positions are permanently static)
+      const seed = (x * 374761393 + y * 668265263) & 0x7fffffff;
+
+      // ── Base: dark earthy fill (anchors the rocks to the ground) ─
+      ctx.save();
+      ctx.fillStyle = 'rgba(29, 20, 14, 0.65)'; // dark brown earth
+      ctx.fillRect(px + 1, py + 1, cellSize - 2, cellSize - 2);
+
+      // ── Rock cluster: 2–4 angular stones per zone cell ──────────
+      const rockCount = 2 + (seed % 3); // 2, 3, or 4 rocks
+
+      for (let i = 0; i < rockCount; i++) {
+        const subSeed = seed + i * 7919;
+
+        // Position within cell (avoid edges — keep 0.08–0.85 range)
+        const rx = px + cellSize * (0.08 + ((subSeed * 173) & 0xff) / 255 * 0.77);
+        const ry = py + cellSize * (0.08 + ((subSeed * 419) & 0xff) / 255 * 0.77);
+
+        // Size: 0.3–0.6 of cell width, 0.25–0.5 of cell height
+        const rw = cellSize * (0.28 + ((subSeed * 73) & 0x7f) / 127 * 0.32);
+        const rh = cellSize * (0.22 + ((subSeed * 251) & 0x7f) / 127 * 0.28);
+
+        // Slight rotation for natural irregularity (±0.15 rad)
+        const angle = ((subSeed * 137) & 0xff) / 255 * 0.3 - 0.15;
+
+        // Stone color: warm grey-brown with natural variance
+        // Base: #78716c (warm stone) with ±20 variation per channel
+        const shade = 0.35 + ((subSeed * 59) & 0x3f) / 63 * 0.3;
+        const sr = Math.round(110 + shade * 40);
+        const sg = Math.round(100 + shade * 35);
+        const sb = Math.round(90 + shade * 30);
+
+        ctx.save();
+        ctx.translate(rx + rw / 2, ry + rh / 2);
+        ctx.rotate(angle);
+
+        // ── Shadow: slightly larger dark offset for depth ─────────
+        ctx.beginPath();
+        drawRockPolygon(ctx, -rw / 2 + 1, -rh / 2 + 1, rw, rh, subSeed + 1);
+        ctx.fillStyle = 'rgba(15, 12, 8, 0.4)';
+        ctx.fill();
+
+        // ── Body: angular rock polygon ────────────────────────────
+        ctx.beginPath();
+        drawRockPolygon(ctx, -rw / 2, -rh / 2, rw, rh, subSeed);
+        ctx.fillStyle = `rgba(${sr}, ${sg}, ${sb}, 0.85)`;
+        ctx.fill();
+
+        // ── Edge: darker outline for definition ───────────────────
+        ctx.strokeStyle = `rgba(${Math.round(sr * 0.45)}, ${Math.round(sg * 0.45)}, ${Math.round(sb * 0.45)}, 0.55)`;
+        ctx.lineWidth = Math.max(0.5, scale * 0.18);
+        ctx.stroke();
+
+        // ── Highlight: lighter streak on upper facet ──────────────
+        const hr = Math.min(255, sr + 50);
+        const hg = Math.min(255, sg + 45);
+        const hb = Math.min(255, sb + 40);
+        ctx.beginPath();
+        ctx.moveTo(-rw * 0.25, -rh * 0.35);
+        ctx.lineTo(rw * 0.15, -rh * 0.38);
+        ctx.lineTo(rw * 0.35, -rh * 0.1);
+        ctx.strokeStyle = `rgba(${hr}, ${hg}, ${hb}, 0.3)`;
+        ctx.lineWidth = Math.max(0.3, scale * 0.12);
+        ctx.stroke();
+
+        ctx.restore();
+      }
+
+      // ── Dust motes: 1–2 tiny speckles for texture ───────────────
+      const moteAlpha = 0.15 + ((seed * 97) & 0x3f) / 63 * 0.1;
+      const moteCount = 1 + (seed & 1);
+      for (let m = 0; m < moteCount; m++) {
+        const mx = px + cellSize * (0.15 + ((seed + m * 313) & 0x7f) / 127 * 0.7);
+        const my = py + cellSize * (0.15 + ((seed + m * 557) & 0x7f) / 127 * 0.7);
+        const mr = scale * (0.3 + ((seed + m * 617) & 0x3) / 3 * 0.5);
+
+        ctx.fillStyle = `rgba(160, 150, 135, ${moteAlpha})`;
+        ctx.beginPath();
+        ctx.arc(mx, my, mr, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      ctx.restore();
+    }
+  }
+}
+
+/**
+ * Draw an irregular polygonal rock shape with slight vertex jitter.
+ *
+ * Uses 6 vertices for an angular, quarried-stone silhouette —
+ * chunky edges with subtle random offset, not smooth organic curves.
+ *
+ * @param {CanvasRenderingContext2D} ctx
+ * @param {number} x — top-left origin x
+ * @param {number} y — top-left origin y
+ * @param {number} w — bounding width
+ * @param {number} h — bounding height
+ * @param {number} seed — deterministic seed for vertex perturbation
+ */
+function drawRockPolygon(ctx, x, y, w, h, seed) {
+  // Vertex positions as fractions of [x, x+w], [y, y+h]
+  // + small jitter from seed for natural irregularity
+  const jitter = (n, s) => ((s * n) & 0xf) / 15 * w * 0.12;
+
+  ctx.moveTo(
+    x + w * 0.05 + jitter(3, seed),
+    y + h * 0.12 + jitter(7, seed)
+  );
+  ctx.lineTo(
+    x + w * 0.82 + jitter(11, seed),
+    y + h * 0.04 + jitter(13, seed)
+  );
+  ctx.lineTo(
+    x + w * 0.94 + jitter(17, seed),
+    y + h * 0.48 + jitter(19, seed)
+  );
+  ctx.lineTo(
+    x + w * 0.78 + jitter(23, seed),
+    y + h * 0.88 + jitter(29, seed)
+  );
+  ctx.lineTo(
+    x + w * 0.28 + jitter(31, seed),
+    y + h * 0.93 + jitter(37, seed)
+  );
+  ctx.lineTo(
+    x + w * 0.03 + jitter(41, seed),
+    y + h * 0.55 + jitter(43, seed)
+  );
+  ctx.closePath();
+}
+
+// ═══════════════════════════════════════════════════════════════════════
 // BASE DRAWING
 // ═══════════════════════════════════════════════════════════════════════
 
@@ -844,6 +1030,87 @@ function drawHealthBar(ctx, screenX, screenY, hp, maxHp, entitySize, scale) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
+// CRAWLER TRAIL VFX (Aphrodite — swarm motion-blur feedback)
+// ═══════════════════════════════════════════════════════════════════════
+
+/**
+ * Record a trail dot at the crawler's current jittered position.
+ * Throttled to CRAWLER_TRAIL_INTERVAL ticks to prevent visual clutter.
+ * Trail dots fade over CRAWLER_TRAIL_LIFE ticks.
+ *
+ * @param {object} enemy — crawler enemy entity
+ * @param {number} tick — current sim tick
+ * @param {number} jx — jitter offset x (cells)
+ * @param {number} jy — jitter offset y (cells)
+ */
+function recordCrawlerTrail(enemy, tick, jx, jy) {
+  // Throttle: one trail dot every CRAWLER_TRAIL_INTERVAL ticks per crawler
+  if (tick % CRAWLER_TRAIL_INTERVAL !== (enemy.id || 0) % CRAWLER_TRAIL_INTERVAL) return;
+
+  let trails = crawlerTrails.get(enemy.id);
+  if (!trails) {
+    trails = [];
+    crawlerTrails.set(enemy.id, trails);
+  }
+
+  trails.push({
+    x: enemy.x + jx,
+    y: enemy.y + jy,
+    bornTick: tick,
+  });
+
+  // Cap trail length per crawler
+  if (trails.length > 8) trails.shift();
+}
+
+/**
+ * Draw crawler motion trails — small fading dots behind moving crawlers.
+ *
+ * Trails create a sense of speed and skittering swarm movement.
+ * Dots shrink and dim as they age, creating a comet-tail effect
+ * behind each crawler. Called at the start of drawEnemies so trails
+ * sit behind enemy shapes.
+ *
+ * @param {CanvasRenderingContext2D} ctx
+ * @param {number} scale — pixels per cell
+ * @param {number} tick — current sim tick
+ */
+function drawCrawlerTrails(ctx, scale, tick) {
+  // Prune expired trails
+  for (const [id, trails] of crawlerTrails) {
+    const live = trails.filter(t => tick - t.bornTick <= CRAWLER_TRAIL_LIFE);
+    if (live.length === 0) {
+      crawlerTrails.delete(id);
+    } else {
+      crawlerTrails.set(id, live);
+    }
+  }
+
+  for (const [, trails] of crawlerTrails) {
+    for (const trail of trails) {
+      const age = tick - trail.bornTick;
+      const lifeRatio = age / CRAWLER_TRAIL_LIFE; // 0 → 1
+      const alpha = (1 - lifeRatio) * 0.55; // 0.55 → 0
+      if (alpha < 0.02) continue;
+
+      const tx = trail.x * scale;
+      const ty = trail.y * scale;
+      const dotR = (1 - lifeRatio * 0.6) * scale * 0.12; // shrinks slightly
+
+      ctx.save();
+      ctx.fillStyle = hexToRgba('#34d399', alpha); // crawler emerald
+      ctx.shadowColor = hexToRgba('#6ee7b7', alpha * 0.5);
+      ctx.shadowBlur = dotR * 2;
+      ctx.beginPath();
+      ctx.arc(tx, ty, dotR, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.shadowBlur = 0;
+      ctx.restore();
+    }
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
 // ENEMY DRAWING
 // ═══════════════════════════════════════════════════════════════════════
 
@@ -858,8 +1125,11 @@ function drawHealthBar(ctx, screenX, screenY, hp, maxHp, entitySize, scale) {
  * @param {number} scale — pixels per cell
  */
 export function drawEnemies(ctx, sim, scale) {
-  const { enemies = [], tick = 0 } = sim;
+  const { enemies = [], tick = 0, baseCenter } = sim;
   if (enemies.length === 0) return;
+
+  // ── Draw crawler motion trails (behind all enemies) ──────────────
+  drawCrawlerTrails(ctx, scale, tick);
 
   // Record deaths BEFORE drawing live enemies (so particles spawn same frame)
   recordDeathParticles(enemies, tick);
@@ -872,7 +1142,7 @@ export function drawEnemies(ctx, sim, scale) {
 
   for (const enemy of enemies) {
     if (!enemy.alive) continue;
-    drawEnemy(ctx, enemy, scale, tick);
+    drawEnemy(ctx, enemy, scale, tick, baseCenter);
   }
 }
 
@@ -893,25 +1163,41 @@ export function drawEnemies(ctx, sim, scale) {
  * @param {object} enemy — { type, x, y, hp, maxHp, size, ... }
  * @param {number} scale — pixels per cell
  * @param {number} tick — current sim tick (for jitter/crawler animation)
+ * @param {object} [baseCenter] — { x, y } base position for movement-direction calc
  */
-function drawEnemy(ctx, enemy, scale, tick) {
+function drawEnemy(ctx, enemy, scale, tick, baseCenter) {
   const visual = ENEMY_VISUAL[enemy.type] || { color: '#888888', glowColor: '#aaaaaa', shape: 'dot' };
 
   // ── Crawler smooth position jitter ──────────────────────────────
-  // Use _jitterX/_jitterY if the AI provides them; otherwise generate
-  // smooth deterministic wobble from enemy id + tick for a sinusoidal feel.
+  // Jitter perpendicular to movement direction (enemy → base) for
+  // organic swarm spread. Each crawler has a persistent sinusoidal
+  // phase seeded from enemy.id — wobbles smoothly, never teleports.
+  // If the AI provides _jitterX/_jitterY those take precedence.
   let jx = 0, jy = 0;
   if (enemy.type === 'crawler') {
     if (enemy._jitterX !== undefined && enemy._jitterY !== undefined) {
       jx = enemy._jitterX;
       jy = enemy._jitterY;
     } else {
-      // Fallback: smooth seeded wobble — persists per crawler across ticks
+      // Movement direction: enemy → base center (or toward enemy.x if unavailable)
+      const toBaseX = (baseCenter?.x ?? enemy.x) - enemy.x;
+      const toBaseY = (baseCenter?.y ?? enemy.y) - enemy.y;
+      const dist = Math.sqrt(toBaseX * toBaseX + toBaseY * toBaseY) || 1;
+      const dirX = toBaseX / dist;
+      const dirY = toBaseY / dist;
+      // Perpendicular vector (rotate 90° CW) — jitter across movement line
+      const perpX = dirY;
+      const perpY = -dirX;
+      // Deterministic sinusoidal wobble per crawler — smooth across ticks
       const phase = ((enemy.id || 0) * 7919) % 360;
-      const amp = 0.3; // cells
-      const speed = 0.15; // radians per tick
-      jx = Math.sin(tick * speed + phase * 0.01745) * amp * 0.7;
-      jy = Math.cos(tick * speed + phase * 0.01745 + 1.3) * amp;
+      const amp = 0.3; // cells — matches SWARM.jitter
+      const speed = 0.12; // radians per tick
+      const wobble = Math.sin(tick * speed + phase * 0.01745) * amp;
+      jx = perpX * wobble;
+      jy = perpY * wobble;
+
+      // ── Spawn trail particles behind moving crawlers ────────────
+      recordCrawlerTrail(enemy, tick, jx, jy);
     }
   }
 

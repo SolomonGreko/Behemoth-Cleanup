@@ -11,7 +11,7 @@ import React, { useRef, useEffect } from 'react';
 import { ResourceHUD, BotLabourHUD } from './ResourceHUD.jsx';
 import {
   getWavePreview, DAY_CYCLE, LEVEL, RESOURCE, toggleSound,
-  drawBackground, drawBase, drawEnemies, drawDeathParticles,
+  drawBackground, drawBase, drawStoneZones, drawEnemies, drawDeathParticles,
   drawCrystalDrops, drawBossShockwaves, drawTurrets, drawBots,
   drawWalls, drawDayNightOverlay, drawSelectionRing,
   findTurretAt, selectTurret, deselectTurret,
@@ -289,6 +289,7 @@ export function BehemothGame({ sim }) {
 
       // ── Render pipeline (back to front) ───────────────────────────
       drawBackground(ctx, canvasW, canvasH, s, scale);
+      drawStoneZones(ctx, s, scale);
       drawBase(ctx, s, scale);
       drawWalls(ctx, s, scale);
       drawEnemies(ctx, s, scale);

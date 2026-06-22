@@ -19,6 +19,7 @@
  */
 
 import { WALL } from './config.js';
+import { removeStoneZone } from './world.js';
 
 // ═══════════════════════════════════════════════════════════════════════
 // CREATION
@@ -56,6 +57,19 @@ export function createWall(sim, x, y, level = 0) {
     buildProgress: 0,         // ticks of build completed
     builderId: null,          // bot ID currently building this wall
   };
+
+  // Destroy any stone zone at this cell — wall placement overrides harvesting
+  const gx = Math.round(x);
+  const gy = Math.round(y);
+  const cell = sim.world?.grid?.[gy]?.[gx];
+  if (cell?.harvestable === 'stone' && sim.stoneZones) {
+    const zone = sim.stoneZones.find(
+      (z) => z.x === gx && z.y === gy
+    );
+    if (zone) {
+      removeStoneZone(sim, zone.id);
+    }
+  }
 
   sim.walls.push(wall);
   return wall;

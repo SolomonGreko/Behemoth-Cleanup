@@ -6,7 +6,7 @@
  * and lives in the integration test suite.
  */
 
-import { describe, it, expect } from 'vitest';
+
 import { drawDayNightOverlay } from '../render.js';
 
 /**

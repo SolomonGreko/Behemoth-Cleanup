@@ -129,6 +129,7 @@ export {
   formatLabelFont,
   formatLabelText,
   drawBackground,
+  drawStoneZones,
   drawBase,
   drawEnemies,
   drawDeathParticles,
