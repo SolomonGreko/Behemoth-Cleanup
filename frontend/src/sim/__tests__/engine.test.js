@@ -50,8 +50,8 @@ describe('engine — createSim', () => {
     expect(sim.baseHp).toBe(BASE.startingHp);
     expect(sim.baseMaxHp).toBe(BASE.hp);
     expect(sim.baseLevel).toBe(0);
-    expect(sim.baseShieldHp).toBe(0);
-    expect(sim.baseMaxShield).toBe(0);
+    expect(sim.shield.hp).toBe(0);
+    expect(sim.shield.maxHp).toBe(0);
   });
 
   it('initializes base center at world midpoint', () => {
