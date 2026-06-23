@@ -286,13 +286,17 @@ export function tickTurrets(sim) {
 
     // Find a target in range
     const target = findTarget(sim, turret);
-    if (!target) continue;
+    if (target) {
+      // Store aim direction for barrel rotation (Aphrodite — aiming visuals)
+      turret._aimX = target.x;
+      turret._aimY = target.y;
 
-    // Mortar fires first if available (higher value shot)
-    if (turret.hasMortar && turret.mortarCd <= 0) {
-      fireMortar(sim, turret, target);
-    } else if (turret.laserCd <= 0) {
-      fireLaser(sim, turret, target);
+      // Mortar fires first if available (higher value shot)
+      if (turret.hasMortar && turret.mortarCd <= 0) {
+        fireMortar(sim, turret, target);
+      } else if (turret.laserCd <= 0) {
+        fireLaser(sim, turret, target);
+      }
     }
   }
 }

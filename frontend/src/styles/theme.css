@@ -23,6 +23,17 @@
   --text-dim: #71717a;
   --text-faint: #52525b;
 
+  /* Extended zinc scale for precise component matching */
+  --zinc-200: #e4e4e7;
+  --zinc-300: #d4d4d8;
+  --zinc-400: #a1a1aa;
+  --zinc-500: #71717a;
+  --zinc-600: #52525b;
+  --zinc-700: #3f3f46;
+  --zinc-800: #27272a;
+  --zinc-900: #18181b;
+  --zinc-950: #09090b;
+
   /* ═══════════════════════════════════════════════════════════════════
      ACCENT PALETTE — Semantic meaning colours
      ═══════════════════════════════════════════════════════════════════ */
@@ -45,6 +56,26 @@
   --accent-magic-muted: #4c1d95;
 
   /* ═══════════════════════════════════════════════════════════════════
+     GAME UI ACCENTS — Specialized game-interface colours
+     ═══════════════════════════════════════════════════════════════════ */
+  --accent-turret: #6ba4c7;        /* turret selection / identity */
+  --accent-watcher: #4b8bb4;       /* watcher card type colour */
+  --accent-wave-next: #60a5fa;     /* next-wave preview label */
+  --accent-wave-spawning: #fbbf24; /* wave active / spawning */
+  --accent-wave-count: #93c5e8;    /* watchers count badge */
+  --accent-damage: #f87171;        /* damage stat value */
+  --accent-pulse-cd: #d97706;      /* pulse wave cooldown amber */
+  --accent-green-rate: #81C784;    /* positive resource rate */
+  --accent-cap-warning: #FFB300;   /* storage full / at-cap */
+
+  /* ═══════════════════════════════════════════════════════════════════
+     RESOURCE PALETTE — In-game resource colours
+     ═══════════════════════════════════════════════════════════════════ */
+  --resource-stone: #b8a88a;
+  --resource-crystal: #70a0e0;
+  --resource-essence: #e8c870;
+
+  /* ═══════════════════════════════════════════════════════════════════
      ENTITY PALETTE — Game-world entity colours
      ═══════════════════════════════════════════════════════════════════ */
   --entity-base: #2d6b3f;
@@ -65,6 +96,39 @@
   --entity-grass: #14532d;
   --entity-moss: #1a3a1a;
   --entity-dirt: #2a1f14;
+
+  /* ═══════════════════════════════════════════════════════════════════
+     NEON GLOW TOKENS — Cyberpunk accent glows for HUD elements
+     ═══════════════════════════════════════════════════════════════════ */
+  --glow-amber: 0 0 8px rgba(251, 191, 36, 0.53);
+  --glow-emerald: 0 0 8px rgba(52, 211, 153, 0.53);
+  --glow-rose: 0 0 8px rgba(251, 113, 133, 0.53);
+  --glow-sky: 0 0 8px rgba(56, 189, 248, 0.53);
+  --glow-turret: 0 0 8px rgba(107, 164, 199, 0.53);
+  --glow-violet: 0 0 8px rgba(192, 132, 252, 0.53);
+  --glow-soft: 0 0 6px;
+
+  /* ═══════════════════════════════════════════════════════════════════
+     PHASE / DAY CYCLE COLOURS — Dawn→Day→Dusk→Night
+     ═══════════════════════════════════════════════════════════════════ */
+  --phase-dawn: #fbbf24;
+  --phase-day: #facc15;
+  --phase-dusk: #fb923c;
+  --phase-night: #6366f1;
+  --phase-dawn-dim: rgba(251, 191, 36, 0.08);
+  --phase-day-dim: rgba(250, 204, 21, 0.08);
+  --phase-dusk-dim: rgba(251, 146, 60, 0.08);
+  --phase-night-dim: rgba(99, 102, 241, 0.08);
+
+  /* ═══════════════════════════════════════════════════════════════════
+     PANEL BACKGROUNDS — Section-specific dark surfaces
+     ═══════════════════════════════════════════════════════════════════ */
+  --panel-bg: rgba(9, 9, 11, 0.88);
+  --panel-bg-alt: rgba(0, 0, 0, 0.75);
+  --panel-border: rgba(255, 255, 255, 0.08);
+  --panel-border-subtle: rgba(255, 255, 255, 0.04);
+  --panel-divider: rgba(255, 255, 255, 0.06);
+  --panel-bar-track: rgba(255, 255, 255, 0.08);
 
   /* ═══════════════════════════════════════════════════════════════════
      CAPTAIN'S ROOM — CRT terminal green-on-black
@@ -149,4 +213,96 @@ html, body, #root {
 ::selection {
   background: rgba(251, 191, 36, 0.25);
   color: var(--text-bright);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   GLOBAL UTILITY CLASSES — Dark panel, neon accents, cyberpunk chrome
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/* Standard dark panel */
+.bh-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  padding: var(--space-sm) var(--space-md);
+  background: var(--panel-bg);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--panel-border);
+  font-family: var(--font-mono);
+  user-select: none;
+}
+
+/* Panel with emerald/success accent border */
+.bh-panel-success {
+  border-color: rgba(52, 211, 153, 0.30);
+  background: rgba(6, 78, 59, 0.12);
+}
+
+/* Panel with amber/primary accent border */
+.bh-panel-primary {
+  border-color: rgba(251, 191, 36, 0.30);
+  background: rgba(120, 53, 15, 0.12);
+}
+
+/* Panel with sky/info accent border */
+.bh-panel-info {
+  border-color: rgba(56, 189, 248, 0.30);
+  background: rgba(12, 74, 110, 0.12);
+}
+
+/* Progress bar track (dark with subtle border) */
+.bh-bar-track {
+  width: 100%;
+  height: 4px;
+  background: var(--panel-bar-track);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+/* Progress bar fill (neon glow, animated) */
+.bh-bar-fill {
+  height: 100%;
+  border-radius: var(--radius-sm);
+  transition: width 0.3s ease, background 0.3s ease;
+}
+
+/* Neon text glow */
+.bh-glow-amber  { text-shadow: var(--glow-amber); }
+.bh-glow-emerald { text-shadow: var(--glow-emerald); }
+.bh-glow-rose    { text-shadow: var(--glow-rose); }
+.bh-glow-sky     { text-shadow: var(--glow-sky); }
+.bh-glow-turret  { text-shadow: var(--glow-turret); }
+.bh-glow-violet  { text-shadow: var(--glow-violet); }
+
+/* Cyberpunk corner accent (top-left glow notch) */
+.bh-corner-accent {
+  position: relative;
+}
+.bh-corner-accent::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 3px;
+  height: 40%;
+  background: var(--accent-primary);
+  box-shadow: 0 0 8px var(--accent-primary);
+  border-radius: var(--radius-lg) 0 0 0;
+}
+
+/* Section header style */
+.bh-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: var(--space-xs);
+  border-bottom: 1px solid var(--panel-divider);
+}
+
+/* Section title — uppercase, tracked, bold */
+.bh-section-title {
+  font-size: var(--font-size-section);
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  font-weight: bold;
 }
