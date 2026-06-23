@@ -1,0 +1,11 @@
+/**
+ * visual-tokens.css — Behemoth Canonical Visual Tokens Entry Point
+ *
+ * This is THE design system import for Behemoth. Every component
+ * should reference CSS custom properties defined here.
+ *
+ * Imports the full token system from theme.css.
+ * Domain: Aphrodite — Visual Design
+ */
+
+@import './theme.css';
