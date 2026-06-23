@@ -144,4 +144,10 @@ export {
   drawDayNightOverlay,
   drawSelectionRing,
   drawBaseParticles,
+  triggerScreenShake,
+  applyScreenShake,
+  spawnBuildEffect,
+  drawBuildEffects,
+  spawnImpactEffect,
+  drawImpactEffects,
 } from './render.js';

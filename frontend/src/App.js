@@ -73,7 +73,9 @@ export default function App() {
   if (!sim) {
     return (
       <div style={styles.loading}>
-        <span style={styles.loadingText}>Loading Behemoth…</span>
+        <span style={styles.loadingText} className="bh-glow-amber">
+          Loading Behemoth…
+        </span>
       </div>
     );
   }
@@ -88,12 +90,12 @@ const styles = {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    background: '#0a0a0f',
+    background: 'var(--bg-deep)',
   },
   loadingText: {
-    fontFamily: "'Courier New', monospace",
+    fontFamily: 'var(--font-mono)',
     fontSize: '18px',
-    color: '#e8c870',
+    color: 'var(--accent-primary)',
     opacity: 0.8,
   },
 };

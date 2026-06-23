@@ -24,6 +24,14 @@ import {
 } from './render/entities.js';
 
 import { recordBaseParticles, drawBaseParticles } from './render/effects.js';
+import {
+  triggerScreenShake,
+  applyScreenShake,
+  spawnBuildEffect,
+  drawBuildEffects,
+  spawnImpactEffect,
+  drawImpactEffects,
+} from './render/effects.js';
 
 // ═══════════════════════════════════════════════════════════════════════
 // RENDER STATE INITIALIZATION
@@ -54,6 +62,14 @@ export function initRenderState(sim) {
     muzzleFlashes: [],
     prevLaserCd: new Map(),
     prevMortarCd: new Map(),
+    // Screen shake state
+    screenShakeIntensity: 0,      // current shake amplitude (pixels), decays each frame
+    screenShakeDecay: 2.5,        // pixels per tick subtracted from intensity
+    screenShakeMaxIntensity: 8,   // hard clamp to prevent disorientation
+    // Build/upgrade VFX
+    buildEffects: [],             // [{ x, y, bornTick, color, isUpgrade }]
+    // Impact burst VFX
+    impactEffects: [],            // [{ x, y, bornTick, color }]
   };
 }
 
@@ -74,6 +90,12 @@ export {
   drawWalls,
   recordBaseParticles,
   drawBaseParticles,
+  triggerScreenShake,
+  applyScreenShake,
+  spawnBuildEffect,
+  drawBuildEffects,
+  spawnImpactEffect,
+  drawImpactEffects,
 };
 
 // ═══════════════════════════════════════════════════════════════════════

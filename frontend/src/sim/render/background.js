@@ -2,8 +2,9 @@
  * render/background.js — Background rendering for Behemoth game.
  *
  * Pure rendering functions for the atmospheric background layer:
- * dark terrain fill, tactical grid overlay, radial vignette, ambient
- * dust motes, and stone harvest zone terrain.
+ * sky gradient, per-cell terrain rendering (grass, moss, dirt, ground, water),
+ * tactical grid overlay, radial vignette, ambient dust motes,
+ * and stone harvest zone terrain.
  *
  * All functions take a CanvasRenderingContext2D and sim state.
  * No default exports — named exports only.
@@ -14,27 +15,100 @@
 import { DAY_CYCLE } from '../config.js';
 
 // ═══════════════════════════════════════════════════════════════════════
+// TERRAIN PALETTE
+// ═══════════════════════════════════════════════════════════════════════
+
+/**
+ * Terrain type visual definitions.
+ *
+ * base: [R, G, B] — base colour per channel (0-255)
+ * var:  max per-channel random variation (±var/2)
+ *
+ * Grass uses rich greens with noticeable variation for a living-field feel.
+ * Moss is darker, more muted — the transition zone between grass and dirt.
+ * Dirt is warm brown-grey — exposed earth, stone harvest areas.
+ * Ground is neutral brown — default terrain, the "untended earth".
+ * Water is deep blue — pools and streams with animated shimmer.
+ */
+const TERRAIN = {
+  GRASS:  { base: [38, 70, 32],  var: 14, label: 'grass' },
+  MOSS:   { base: [30, 52, 28],  var: 8,  label: 'moss' },
+  DIRT:   { base: [62, 48, 34],  var: 10, label: 'dirt' },
+  GROUND: { base: [48, 38, 28],  var: 8,  label: 'ground' },
+  WATER:  { base: [22, 55, 100], var: 5,  label: 'water' },
+};
+
+// Cached terrain ImageData (rebuilt only when world grid changes)
+let _terrainCache = null;
+let _cachedGridRef = null;
+let _cachedScale = 0;
+
+/**
+ * Deterministic seed from cell coordinates.
+ * Stable across frames — no tick dependency.
+ */
+function cellSeed(x, y) {
+  return (x * 374761393 + y * 668265263) & 0x7fffffff;
+}
+
+/**
+ * Get terrain type string for a cell.
+ */
+function getTerrainType(cell) {
+  if (!cell) return 'GROUND';
+  if (cell.type === 'water') return 'WATER';
+  if (cell.harvestable === 'stone') return 'DIRT';
+  if (cell.grass) return 'GRASS';
+  if (cell.moss) return 'MOSS';
+  return 'GROUND';
+}
+
+/**
+ * Get a per-cell terrain RGB colour string with deterministic variation.
+ *
+ * @param {number} x — cell x coordinate
+ * @param {number} y — cell y coordinate
+ * @param {string} type — terrain type key
+ * @returns {string} 'rgb(r, g, b)' colour
+ */
+function terrainRGB(x, y, type) {
+  const t = TERRAIN[type];
+  if (!t) return 'rgb(48,38,28)';
+
+  const seed = cellSeed(x, y);
+  const chop = (n, s) => {
+    const half = Math.floor(t.var / 2);
+    return Math.max(0, Math.min(255, n + ((s * 7 + n * 3) % (t.var + 1)) - half));
+  };
+
+  const r = chop(t.base[0], seed);
+  const g = chop(t.base[1], seed + 1);
+  const b = chop(t.base[2], seed + 2);
+
+  return `rgb(${r},${g},${b})`;
+}
+
+// ═══════════════════════════════════════════════════════════════════════
 // BACKGROUND DRAWING
 // ═══════════════════════════════════════════════════════════════════════
 
 /**
- * Draw atmospheric background: dark terrain, tactical grid, radial vignette.
+ * Draw atmospheric background: sky gradient, per-cell terrain, tactical grid,
+ * radial vignette, ambient dust motes.
  *
- * Establishes the "beautiful desolation" aesthetic — a dark tactical display
- * with a barely-visible green grid and soft radial lighting centered on the base.
- * The grid and vignette respond to the day/night cycle: the grid glows softly
- * during night phases and dims during day, while the vignette deepens at night.
+ * Establishes the "beautiful desolation" aesthetic — a living world seen
+ * from above, with rich terrain variation and responsive day/night lighting.
  *
  * Called once per frame before all entity drawing (pre-fog).
  *
  * @param {CanvasRenderingContext2D} ctx
  * @param {number} canvasW — canvas pixel width
  * @param {number} canvasH — canvas pixel height
- * @param {object} sim — sim state (reads sim.baseCenter, sim.tick, sim.hud)
+ * @param {object} sim — sim state (reads sim.world, sim.baseCenter, sim.tick, sim.hud)
  * @param {number} scale — pixels per cell
  */
 export function drawBackground(ctx, canvasW, canvasH, sim, scale) {
-  const { baseCenter, tick = 0, hud } = sim;
+  const { baseCenter, tick = 0, hud, world } = sim;
   const cx = (baseCenter?.x ?? 0) * scale;
   const cy = (baseCenter?.y ?? 0) * scale;
 
@@ -44,7 +118,6 @@ export function drawBackground(ctx, canvasW, canvasH, sim, scale) {
   if (hud?.dayPhase) {
     const phaseWeights = { dawn: 0.3, day: 0.0, dusk: 0.7, night: 1.0 };
     const baseWeight = phaseWeights[hud.dayPhase] ?? 0.5;
-    // Blend toward next phase if transition is active
     const blend = hud.phaseBlend ?? 0;
     const phaseIdx = DAY_CYCLE.phaseOrder.indexOf(hud.dayPhase);
     const nextPhase = DAY_CYCLE.phaseOrder[(phaseIdx + 1) % 4];
@@ -52,33 +125,159 @@ export function drawBackground(ctx, canvasW, canvasH, sim, scale) {
     nightFactor = baseWeight + (nextWeight - baseWeight) * blend;
   }
 
-  // ── Layer 1: base terrain fill ──────────────────────────────────
+  // ── Layer 1: Sky gradient ────────────────────────────────────────
+  // Warm sky blue at top fading to terrain earth-tone below.
+  // Night deepens the sky toward indigo and darkens the transition.
   ctx.save();
-  ctx.fillStyle = '#0a0f0a';  // deep green-black earth
-  ctx.fillRect(0, 0, canvasW, canvasH);
+
+  const skyHeight = Math.floor(canvasH * 0.28); // top 28% is sky
+  const skyGrad = ctx.createLinearGradient(0, 0, 0, skyHeight);
+
+  // Day sky: #87CEEB → earth tone. Night: #191970 → near-black earth.
+  const skyTopR = Math.round(135 - nightFactor * 110);  // 135 → 25
+  const skyTopG = Math.round(206 - nightFactor * 181);  // 206 → 25
+  const skyTopB = Math.round(235 - nightFactor * 123);  // 235 → 112
+
+  const earthR = Math.round(12 - nightFactor * 4);   // 12 → 8
+  const earthG = Math.round(18 - nightFactor * 6);    // 18 → 12
+  const earthB = Math.round(14 - nightFactor * 6);    // 14 → 8
+
+  skyGrad.addColorStop(0, `rgb(${skyTopR},${skyTopG},${skyTopB})`);
+  skyGrad.addColorStop(0.65, `rgb(${Math.round((skyTopR + earthR) / 2)},${Math.round((skyTopG + earthG) / 2)},${Math.round((skyTopB + earthB) / 2)})`);
+  skyGrad.addColorStop(1, `rgb(${earthR},${earthG},${earthB})`);
+
+  ctx.fillStyle = skyGrad;
+  ctx.fillRect(0, 0, canvasW, skyHeight);
   ctx.restore();
 
-  // ── Layer 2: subtle tactical grid ───────────────────────────────
+  // ── Layer 2: Per-cell terrain rendering ──────────────────────────
+  // Uses run-length encoding to batch consecutive same-type cells
+  // within each row, then draws individual cell rects for colour variation.
+  // 16,384 cells × ~8×8px each ≈ trivial cost for modern Canvas.
+  if (world?.grid) {
+    ctx.save();
+    const cellSize = scale;
+    const rows = world.grid.length;
+    const cols = world.grid[0]?.length ?? 0;
+
+    for (let y = 0; y < rows; y++) {
+      const row = world.grid[y];
+      if (!row) continue;
+
+      let runStart = 0;
+      let runType = null;
+
+      for (let x = 0; x <= cols; x++) {
+        const type = x < cols ? getTerrainType(row[x]) : null;
+
+        if (type !== runType || x === cols) {
+          // ── Flush current run ─────────────────────────────────
+          if (runType && runStart < x) {
+            const isWater = runType === 'WATER';
+
+            for (let rx = runStart; rx < x; rx++) {
+              const px = rx * cellSize;
+              const py = y * cellSize;
+
+              if (isWater) {
+                // ── Water: animated shimmer ────────────────────
+                const phase = tick * 0.04 + (rx + y) * 0.37;
+                const shimmer = Math.sin(phase) * 7;
+                const shimmer2 = Math.cos(phase * 1.3 + 1.2) * 5;
+                const r = 22 + shimmer * 0.3;
+                const g = Math.max(20, 55 + shimmer * 0.6 + shimmer2 * 0.4);
+                const b = Math.min(180, 100 + shimmer + shimmer2 * 0.5);
+
+                ctx.fillStyle = `rgb(${Math.round(r)},${Math.round(g)},${Math.round(b)})`;
+                ctx.fillRect(px, py, cellSize, cellSize);
+
+                // Subtle ripple highlight
+                const ripplePhase = tick * 0.06 + rx * 0.5 + y * 0.3;
+                const rippleAlpha = Math.max(0, Math.sin(ripplePhase) * 0.12);
+                if (rippleAlpha > 0.01) {
+                  ctx.fillStyle = `rgba(160,210,255,${rippleAlpha.toFixed(3)})`;
+                  ctx.fillRect(px + 1, py + 1, cellSize - 2, cellSize - 2);
+                }
+              } else {
+                // ── Standard terrain with colour variation ─────
+                ctx.fillStyle = terrainRGB(rx, y, runType);
+                ctx.fillRect(px, py, cellSize, cellSize);
+
+                // Subtle texture speckle for grass/dirt
+                if ((runType === 'GRASS' || runType === 'MOSS' || runType === 'GROUND') &&
+                    (cellSeed(rx, y) % 5 === 0)) {
+                  const speckX = px + (cellSeed(rx + 100, y) % cellSize);
+                  const speckY = py + (cellSeed(rx, y + 200) % cellSize);
+                  const speckAlpha = 0.04 + (cellSeed(rx, y + 300) % 5) / 100;
+                  ctx.fillStyle = runType === 'GRASS'
+                    ? `rgba(80,140,60,${speckAlpha})`
+                    : `rgba(70,55,40,${speckAlpha})`;
+                  ctx.fillRect(speckX, speckY, 2, 2);
+                }
+              }
+            }
+          }
+
+          runStart = x;
+          runType = type;
+        }
+      }
+    }
+
+    ctx.restore();
+  } else {
+    // ── Fallback: flat terrain fill when no world grid ─────────
+    ctx.save();
+    ctx.fillStyle = '#0e140e';
+    ctx.fillRect(0, 0, canvasW, canvasH);
+    ctx.restore();
+  }
+
+  // ── Layer 3: Subtle tactical grid ────────────────────────────────
   // Thin monospace-green lines at cell intervals — like a comms overlay.
-  // Grid alpha pulses very gently with the day/night cycle.
-  const gridAlpha = 0.02 + nightFactor * 0.06;  // 0.02 day → 0.08 night
-  const gridColor = `rgba(34, 197, 94, ${gridAlpha})`;  // green-500
-  const cellSize = scale;  // one grid cell per game cell
+  // Major grid lines (every 8 cells) are slightly more visible.
+  // Grid alpha pulses gently with the day/night cycle.
+  const gridAlphaMinor = 0.015 + nightFactor * 0.04;  // 0.015 day → 0.055 night
+  const gridAlphaMajor = 0.025 + nightFactor * 0.06;  // 0.025 day → 0.085 night
+  const gridAlphaMinorStr = gridAlphaMinor.toFixed(4);
+  const gridAlphaMajorStr = gridAlphaMajor.toFixed(4);
+  const cellSize = scale;
+  const majorInterval = 8; // every 8 cells
 
   ctx.save();
-  ctx.strokeStyle = gridColor;
+
+  // Minor grid lines (every cell)
+  ctx.strokeStyle = `rgba(34,197,94,${gridAlphaMinorStr})`;
   ctx.lineWidth = 0.5;
 
-  // Vertical grid lines
   for (let x = cellSize; x < canvasW; x += cellSize) {
+    if (x % (majorInterval * cellSize) === 0) continue; // skip majors
     ctx.beginPath();
     ctx.moveTo(x, 0);
     ctx.lineTo(x, canvasH);
     ctx.stroke();
   }
 
-  // Horizontal grid lines
   for (let y = cellSize; y < canvasH; y += cellSize) {
+    if (y % (majorInterval * cellSize) === 0) continue;
+    ctx.beginPath();
+    ctx.moveTo(0, y);
+    ctx.lineTo(canvasW, y);
+    ctx.stroke();
+  }
+
+  // Major grid lines (every 8 cells) — slightly thicker, more visible
+  ctx.strokeStyle = `rgba(34,197,94,${gridAlphaMajorStr})`;
+  ctx.lineWidth = 0.7;
+
+  for (let x = majorInterval * cellSize; x < canvasW; x += majorInterval * cellSize) {
+    ctx.beginPath();
+    ctx.moveTo(x, 0);
+    ctx.lineTo(x, canvasH);
+    ctx.stroke();
+  }
+
+  for (let y = majorInterval * cellSize; y < canvasH; y += majorInterval * cellSize) {
     ctx.beginPath();
     ctx.moveTo(0, y);
     ctx.lineTo(canvasW, y);
@@ -86,7 +285,7 @@ export function drawBackground(ctx, canvasW, canvasH, sim, scale) {
   }
   ctx.restore();
 
-  // ── Layer 3: radial vignette ────────────────────────────────────
+  // ── Layer 4: Radial vignette ────────────────────────────────────
   // Darkens toward canvas edges, softens toward the base center.
   // Night deepens the vignette — edges become nearly black.
   const vignetteIntensity = 0.55 + nightFactor * 0.35;  // 0.55 day → 0.90 night
@@ -106,7 +305,7 @@ export function drawBackground(ctx, canvasW, canvasH, sim, scale) {
   ctx.fillRect(0, 0, canvasW, canvasH);
   ctx.restore();
 
-  // ── Layer 4: ambient dust motes ─────────────────────────────────
+  // ── Layer 5: Ambient dust motes ─────────────────────────────────
   // Tiny, slow-drifting particles in the darker zones — adds depth.
   // Seeded deterministically from tick so they don't jitter per-frame.
   const moteCount = Math.floor((canvasW * canvasH) / 8000);  // ~1 per 8000 px²

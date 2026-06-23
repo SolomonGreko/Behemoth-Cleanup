@@ -1,11 +1,774 @@
 /**
- * visual-tokens.css — Behemoth Canonical Visual Tokens Entry Point
+ * visual-tokens.css — Behemoth Canonical Design System
+ * =================================================================
+ * THE single source of truth for every visual decision in Behemoth.
+ * Import this once in index.js and reference CSS custom properties
+ * everywhere. No hardcoded hex values in components.
  *
- * This is THE design system import for Behemoth. Every component
- * should reference CSS custom properties defined here.
- *
- * Imports the full token system from theme.css.
  * Domain: Aphrodite — Visual Design
+ * Version: 2.0 — 2026-06-23
+ * Reference: docs/VISUAL_SPEC.md v1.0
+ *
+ * Architecture:
+ *   1. COLOR — palettes for chrome, accents, entities, CRT
+ *   2. TYPOGRAPHY — font stacks, type scale, tracking
+ *   3. SPACING — 4px grid, radii, layout tokens
+ *   4. SHADOWS — box-shadow catalog (canvas, modals, glow)
+ *   5. BORDERS — width, style, color presets
+ *   6. TRANSITIONS — duration, easing, motion tokens
+ *   7. Z-INDEX — standardized stacking scale
+ *   8. OPACITY — overlays, disabled states, dimming
+ *   9. CANVAS — game-world specific tokens
+ *  10. COMPONENTS — section/button/badge presets
+ *  11. ANIMATIONS — keyframes for pulse, glow, shimmer
+ *  12. BASE — html/body, scrollbar, selection
  */
 
-@import './theme.css';
+/* ═══════════════════════════════════════════════════════════════════════
+   1. COLOR SYSTEM
+   ═══════════════════════════════════════════════════════════════════════ */
+
+:root {
+  /* ── 1a. PRIMARY PALETTE — UI Chrome (zinc scale) ───────────────── */
+  --color-bg-deep: #09090b;          /* page / canvas foundation */
+  --color-bg-surface: #18181b;       /* cards, panels, sections */
+  --color-bg-elevated: #1c1c1f;      /* hover states, active panels */
+  --color-bg-overlay: #0f0f12;       /* modal backdrops, drawers */
+  --color-border-default: #27272a;   /* section borders, dividers */
+  --color-border-subtle: #1f1f23;    /* inner borders, faint separators */
+  --color-border-strong: #3f3f46;    /* prominent borders, focus rings */
+  --color-text-bright: #f4f4f5;      /* headings, critical values */
+  --color-text-body: #a1a1aa;        /* body text, labels */
+  --color-text-dim: #71717a;         /* secondary labels, cooldowns */
+  --color-text-faint: #52525b;       /* fine print, disabled, legend */
+
+  /* Backward-compat aliases */
+  --bg-deep: var(--color-bg-deep);
+  --bg-surface: var(--color-bg-surface);
+  --bg-elevated: var(--color-bg-elevated);
+  --border-default: var(--color-border-default);
+  --border-subtle: var(--color-border-subtle);
+  --text-bright: var(--color-text-bright);
+  --text-body: var(--color-text-body);
+  --text-dim: var(--color-text-dim);
+  --text-faint: var(--color-text-faint);
+
+  /* ── 1b. ACCENT PALETTE — Semantic meaning colours ──────────────── */
+  --color-primary: #fbbf24;          /* amber-400 — attention, action */
+  --color-success: #34d399;          /* emerald-400 — health, growth */
+  --color-danger: #fb7185;           /* rose-400 — damage, threat */
+  --color-info: #38bdf8;             /* sky-400 — status, neutral */
+  --color-magic: #c084fc;            /* violet-400 — special, rare */
+  --color-warning: #fb923c;          /* orange-400 — caution, cooldown */
+
+  /* Backward-compat aliases */
+  --accent-primary: var(--color-primary);
+  --accent-success: var(--color-success);
+  --accent-danger: var(--color-danger);
+  --accent-info: var(--color-info);
+  --accent-magic: var(--color-magic);
+
+  /* ── 1c. ACCENT VARIANTS — hover (lighter) + muted (dark bg) ───── */
+  --color-primary-hover: #fcd34d;     /* amber-300 */
+  --color-primary-muted: #78350f;     /* amber-900 */
+  --color-success-hover: #6ee7b7;     /* emerald-300 */
+  --color-success-muted: #064e3b;     /* emerald-900 */
+  --color-danger-hover: #fda4af;      /* rose-300 */
+  --color-danger-muted: #881337;      /* rose-900 */
+  --color-info-hover: #7dd3fc;        /* sky-300 */
+  --color-info-muted: #0c4a6e;        /* sky-900 */
+  --color-magic-hover: #d8b4fe;       /* violet-300 */
+  --color-magic-muted: #4c1d95;       /* violet-900 */
+  --color-warning-hover: #fdba74;     /* orange-300 */
+  --color-warning-muted: #7c2d12;     /* orange-900 */
+
+  /* Backward-compat aliases */
+  --accent-primary-hover: var(--color-primary-hover);
+  --accent-primary-muted: var(--color-primary-muted);
+  --accent-success-hover: var(--color-success-hover);
+  --accent-success-muted: var(--color-success-muted);
+  --accent-danger-hover: var(--color-danger-hover);
+  --accent-danger-muted: var(--color-danger-muted);
+  --accent-info-hover: var(--color-info-hover);
+  --accent-info-muted: var(--color-info-muted);
+  --accent-magic-hover: var(--color-magic-hover);
+  --accent-magic-muted: var(--color-magic-muted);
+
+  /* ── 1d. NEON ACCENTS — Gaming glow aesthetic ──────────────────── */
+  /* Brighter, higher-saturation variants for active/glow states.
+     Used with box-shadow for pulsing neon effects on critical UI. */
+  --color-neon-amber: #fbbf24;       /* base neon — wave counter */
+  --color-neon-amber-glow: #f59e0b;  /* glow ring */
+  --color-neon-emerald: #10b981;     /* base neon — integrity healthy */
+  --color-neon-emerald-glow: #059669;/* glow ring */
+  --color-neon-rose: #f43f5e;        /* base neon — critical damage */
+  --color-neon-rose-glow: #e11d48;   /* glow ring */
+  --color-neon-sky: #0ea5e9;         /* base neon — active scout */
+  --color-neon-sky-glow: #0284c7;    /* glow ring */
+  --color-neon-violet: #a855f7;      /* base neon — magic / final defense */
+  --color-neon-violet-glow: #9333ea; /* glow ring */
+  --color-neon-cyan: #06b6d4;        /* base neon — terminal cursor */
+  --color-neon-cyan-glow: #0891b2;   /* glow ring */
+
+  /* ── 1e. ENTITY PALETTE — Game-world entity colours ────────────── */
+  --entity-base: #2d6b3f;
+  --entity-watcher: #3ea35a;
+  --entity-bot: #4ea0c9;
+  --entity-enemy: #d65a4e;
+  --entity-scout: #e2a83e;
+  --entity-bunny: #f9a8d4;
+  --entity-fox: #f97316;
+  --entity-deer: #a78b6a;
+  --entity-hedgehog: #78716c;
+  --entity-owl: #94a3b8;
+  --entity-squirrel: #ca8a04;
+  --entity-wall: #78716c;
+  --entity-root: #6b7280;
+  --entity-car: #64748b;
+  --entity-steel: #fbbf24;
+  --entity-grass: #14532d;
+  --entity-moss: #1a3a1a;
+  --entity-dirt: #2a1f14;
+
+  /* ── 1f. CAPTAIN'S ROOM — CRT terminal green-on-black ──────────── */
+  --crt-bg: #000000;
+  --crt-text-bright: #4ade80;
+  --crt-text-body: #22c55e;
+  --crt-text-dim: #166534;
+  --crt-border: #166534;
+  --crt-hover-text: #86efac;
+  --crt-hover-bg: #052e16;
+  --crt-selected-bg: #052e16;
+
+  /* ── 1g. MUTED NEUTRALS — Subdued tones for inactive chrome ────── */
+  --color-neutral-50: #fafafa;
+  --color-neutral-100: #f4f4f5;
+  --color-neutral-200: #e4e4e7;
+  --color-neutral-300: #d4d4d8;
+  --color-neutral-400: #a1a1aa;
+  --color-neutral-500: #71717a;
+  --color-neutral-600: #52525b;
+  --color-neutral-700: #3f3f46;
+  --color-neutral-800: #27272a;
+  --color-neutral-900: #18181b;
+  --color-neutral-950: #09090b;
+
+  /* ── 1h. GAMING NEUTRALS — Slightly warm-tinted darks ──────────── */
+  --color-void: #08080c;              /* deep space void — darker than bg-deep */
+  --color-charcoal: #141418;          /* warm dark — sidebar, footer chrome */
+  --color-slate-warm: #1a1a20;        /* warm slate — elevated panels */
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   2. TYPOGRAPHY SYSTEM
+   ═══════════════════════════════════════════════════════════════════════ */
+
+:root {
+  /* ── 2a. FONT STACKS ───────────────────────────────────────────── */
+  /* Monospace: data, terminal, values, code, HUD readouts */
+  --font-mono: "Fira Code", "Cascadia Code", ui-monospace,
+              SF Mono, Menlo, Consolas, monospace;
+
+  /* Sans-serif: UI labels, button text, section headers, tooltips */
+  --font-sans: "Inter", system-ui, -apple-system, BlinkMacSystemFont,
+              "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+
+  /* Display: big stat numbers, wave counter digits — mono for tabular */
+  --font-display: var(--font-mono);
+
+  /* ── 2b. TYPE SCALE — 8px to 20px ──────────────────────────────── */
+  --text-xs: 8px;                    /* tiny badges, pixel labels */
+  --text-sm: 9px;                    /* fine print, legend, cooldowns */
+  --text-base: 11px;                 /* body text, labels, descriptions */
+  --text-md: 12px;                   /* button text, emphasis */
+  --text-lg: 13px;                   /* code, terminal, file viewer */
+  --text-xl: 15px;                   /* hero title, HUD header */
+  --text-2xl: 18px;                  /* big stat alternative */
+  --text-3xl: 20px;                  /* critical stat (integrity: 120/120) */
+  --text-4xl: 24px;                  /* wave counter during combat */
+
+  /* Backward-compat aliases */
+  --font-size-hero: var(--text-xl);
+  --font-size-section: var(--text-sm);
+  --font-size-body: var(--text-base);
+  --font-size-fine: var(--text-sm);
+  --font-size-button: var(--text-md);
+  --font-size-dev: 10.5px;
+  --font-size-big-stat: var(--text-3xl);
+  --font-size-code: var(--text-lg);
+
+  /* ── 2c. FONT WEIGHTS ──────────────────────────────────────────── */
+  --weight-normal: 400;
+  --weight-medium: 500;
+  --weight-semibold: 600;
+  --weight-bold: 700;
+
+  /* ── 2d. LETTER SPACING (tracking) ─────────────────────────────── */
+  --tracking-tight: -0.025em;
+  --tracking-normal: 0;
+  --tracking-wide: 0.025em;
+  --tracking-wider: 0.05em;
+  --tracking-widest: 0.1em;
+  --tracking-hero: 0.3em;
+
+  /* Backward-compat aliases */
+  --tracking-section: var(--tracking-widest);
+  --tracking-button: var(--tracking-wider);
+
+  /* ── 2e. LINE HEIGHT ───────────────────────────────────────────── */
+  --leading-none: 1;
+  --leading-tight: 1.25;
+  --leading-normal: 1.5;
+  --leading-relaxed: 1.625;
+
+  /* ── 2f. NUMERIC DISPLAY ───────────────────────────────────────── */
+  --font-feature-tabular: "tnum" 1;  /* tabular-nums for aligned columns */
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   3. SPACING & LAYOUT (4px base unit)
+   ═══════════════════════════════════════════════════════════════════════ */
+
+:root {
+  /* ── 3a. SPACING SCALE ─────────────────────────────────────────── */
+  --space-0: 0;
+  --space-1: 4px;                    /* xs — icon gap, tight inline */
+  --space-2: 8px;                    /* sm — button padding, small gaps */
+  --space-3: 12px;                   /* md — section padding, card gutters */
+  --space-4: 16px;                   /* lg — section gaps, panel margins */
+  --space-5: 20px;                   /* xl — HUD section spacing */
+  --space-6: 24px;                   /* 2xl — major layout gaps */
+  --space-8: 32px;                   /* 3xl — page section separation */
+  --space-10: 40px;                  /* 4xl — large block margins */
+  --space-12: 48px;                  /* 5xl — hero spacing */
+  --space-16: 64px;                  /* 6xl — page-level padding */
+
+  /* Backward-compat aliases */
+  --space-xs: var(--space-1);
+  --space-sm: var(--space-2);
+  --space-md: var(--space-3);
+  --space-lg: var(--space-4);
+  --space-xl: var(--space-5);
+  --space-2xl: var(--space-6);
+
+  /* ── 3b. BORDER RADII ──────────────────────────────────────────── */
+  --radius-none: 0;
+  --radius-sm: 4px;                  /* small elements, badges */
+  --radius-md: 6px;                  /* cards, panels, sections */
+  --radius-lg: 8px;                  /* canvas border, large containers */
+  --radius-xl: 12px;                 /* modals, prominent panels */
+  --radius-full: 9999px;             /* progress bars, pill badges */
+
+  /* ── 3c. LAYOUT WIDTHS ─────────────────────────────────────────── */
+  --width-hud: 300px;                /* HUD sidebar width (lg) */
+  --width-hud-xl: 320px;             /* HUD sidebar width (xl) */
+  --width-devtools: 168px;           /* DevToolsColumn width */
+  --width-canvas-max: 1024px;        /* canvas max-width (COLS × CELL) */
+  --width-devtools-overlay: 288px;   /* DevOverlay slide-in width */
+  --width-terminal: 480px;           /* debug terminal overlay width */
+
+  /* ── 3d. COMPONENT HEIGHTS ─────────────────────────────────────── */
+  --height-button-sm: 28px;          /* compact button */
+  --height-button: 36px;             /* standard button (h-9) */
+  --height-button-lg: 44px;          /* large button */
+  --height-input: 32px;              /* form input */
+  --height-progress: 6px;            /* progress bar (h-1.5) */
+  --height-header: 48px;             /* section header */
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   4. SHADOWS — box-shadow catalog
+   ═══════════════════════════════════════════════════════════════════════ */
+
+:root {
+  /* ── 4a. ELEVATION SHADOWS — dark theme (glow, not drop) ───────── */
+  --shadow-none: none;
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.5);
+  --shadow-sm: 0 2px 4px rgba(0, 0, 0, 0.6),
+               0 0 1px rgba(255, 255, 255, 0.03);
+  --shadow-md: 0 4px 8px rgba(0, 0, 0, 0.7),
+               0 0 2px rgba(255, 255, 255, 0.02);
+  --shadow-lg: 0 8px 16px rgba(0, 0, 0, 0.8),
+               0 0 4px rgba(255, 255, 255, 0.02);
+  --shadow-xl: 0 12px 24px rgba(0, 0, 0, 0.9);
+
+  /* ── 4b. CANVAS SHADOW — game world frame ──────────────────────── */
+  --shadow-canvas: 0 0 0 1px rgba(39, 39, 42, 0.8),
+                   0 0 30px rgba(0, 0, 0, 0.8),
+                   0 0 60px rgba(0, 0, 0, 0.4);
+
+  /* ── 4c. NEON GLOW SHADOWS — gaming aesthetic ──────────────────── */
+  --shadow-glow-amber: 0 0 8px rgba(251, 191, 36, 0.4),
+                       0 0 20px rgba(251, 191, 36, 0.15);
+  --shadow-glow-emerald: 0 0 8px rgba(52, 211, 153, 0.4),
+                         0 0 20px rgba(52, 211, 153, 0.15);
+  --shadow-glow-rose: 0 0 8px rgba(251, 113, 133, 0.4),
+                      0 0 20px rgba(251, 113, 133, 0.15);
+  --shadow-glow-sky: 0 0 8px rgba(56, 189, 248, 0.4),
+                     0 0 20px rgba(56, 189, 248, 0.15);
+  --shadow-glow-violet: 0 0 8px rgba(192, 132, 252, 0.4),
+                        0 0 20px rgba(192, 132, 252, 0.15);
+  --shadow-glow-cyan: 0 0 8px rgba(6, 182, 212, 0.4),
+                      0 0 20px rgba(6, 182, 212, 0.15);
+
+  /* ── 4d. INNER SHADOWS — inset effects ─────────────────────────── */
+  --shadow-inset-sm: inset 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-inset-md: inset 0 2px 4px rgba(0, 0, 0, 0.5);
+  --shadow-inset-top: inset 0 4px 8px -4px rgba(0, 0, 0, 0.6);
+  --shadow-inset-bottom: inset 0 -4px 8px -4px rgba(0, 0, 0, 0.6);
+
+  /* ── 4e. MODAL / OVERLAY SHADOWS ───────────────────────────────── */
+  --shadow-modal: 0 0 0 1px rgba(39, 39, 42, 0.5),
+                 0 20px 60px rgba(0, 0, 0, 0.9),
+                 0 0 120px rgba(0, 0, 0, 0.5);
+  --shadow-overlay: 0 4px 12px rgba(0, 0, 0, 0.8);
+
+  /* ── 4f. FOCUS RINGS ───────────────────────────────────────────── */
+  --shadow-focus: 0 0 0 2px var(--color-primary),
+                  0 0 0 4px rgba(251, 191, 36, 0.2);
+  --shadow-focus-danger: 0 0 0 2px var(--color-danger),
+                         0 0 0 4px rgba(251, 113, 133, 0.2);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   5. BORDERS
+   ═══════════════════════════════════════════════════════════════════════ */
+
+:root {
+  /* ── 5a. BORDER WIDTHS ─────────────────────────────────────────── */
+  --border-width-none: 0;
+  --border-width-hairline: 0.5px;
+  --border-width-thin: 1px;
+  --border-width-medium: 2px;
+  --border-width-thick: 3px;
+
+  /* ── 5b. BORDER STYLES ─────────────────────────────────────────── */
+  --border-style-solid: solid;
+  --border-style-dashed: dashed;
+  --border-style-dotted: dotted;
+
+  /* ── 5c. BORDER COLOR PRESETS — using color tokens ─────────────── */
+  --border-color-default: var(--color-border-default);
+  --border-color-subtle: var(--color-border-subtle);
+  --border-color-strong: var(--color-border-strong);
+  --border-color-primary: rgba(251, 191, 36, 0.5);
+  --border-color-success: rgba(52, 211, 153, 0.4);
+  --border-color-danger: rgba(251, 113, 133, 0.5);
+  --border-color-info: rgba(56, 189, 248, 0.4);
+  --border-color-magic: rgba(192, 132, 252, 0.4);
+
+  /* ── 5d. BORDER SHORTHAND PRESETS ──────────────────────────────── */
+  /* Usage: border: var(--border-section); */
+  --border-section: var(--border-width-thin) var(--border-style-solid)
+                    var(--color-border-default);
+  --border-section-subtle: var(--border-width-thin) var(--border-style-solid)
+                           var(--color-border-subtle);
+  --border-input: var(--border-width-thin) var(--border-style-solid)
+                  var(--color-border-default);
+  --border-divider: var(--border-width-hairline) var(--border-style-solid)
+                    var(--color-border-subtle);
+
+  /* ── 5e. RING WIDTH (focus outlines) ───────────────────────────── */
+  --ring-width: 2px;
+  --ring-offset: 2px;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   6. TRANSITIONS & MOTION
+   ═══════════════════════════════════════════════════════════════════════ */
+
+:root {
+  /* ── 6a. DURATIONS ─────────────────────────────────────────────── */
+  --duration-instant: 50ms;          /* hover on, micro-interactions */
+  --duration-fast: 100ms;            /* hover off, color transitions */
+  --duration-normal: 200ms;          /* fade, toggle, show/hide */
+  --duration-slow: 300ms;            /* panels, drawers, modals */
+  --duration-slower: 500ms;          /* major transitions, dissolves */
+  --duration-glacial: 1000ms;        /* ambient fades, day cycle */
+
+  /* ── 6b. EASING CURVES ─────────────────────────────────────────── */
+  --ease-linear: linear;
+  --ease-in: cubic-bezier(0.4, 0, 1, 1);
+  --ease-out: cubic-bezier(0, 0, 0.2, 1);
+  --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);  /* bouncy */
+  --ease-bounce: cubic-bezier(0.68, -0.55, 0.265, 1.55);
+
+  /* ── 6c. TRANSITION SHORTHAND PRESETS ──────────────────────────── */
+  --transition-colors: color var(--duration-fast) var(--ease-out),
+                       background-color var(--duration-fast) var(--ease-out),
+                       border-color var(--duration-fast) var(--ease-out);
+  --transition-opacity: opacity var(--duration-normal) var(--ease-out);
+  --transition-transform: transform var(--duration-normal) var(--ease-out);
+  --transition-shadow: box-shadow var(--duration-normal) var(--ease-out);
+  --transition-all: all var(--duration-normal) var(--ease-out);
+  --transition-glow: box-shadow var(--duration-slow) var(--ease-in-out),
+                     opacity var(--duration-slow) var(--ease-in-out);
+  --transition-slide: transform var(--duration-slow) var(--ease-out),
+                      opacity var(--duration-slow) var(--ease-out);
+
+  /* ── 6d. WILL-CHANGE hints (use sparingly) ─────────────────────── */
+  --motion-safe: @media (prefers-reduced-motion: no-preference);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   7. Z-INDEX SCALE
+   ═══════════════════════════════════════════════════════════════════════ */
+
+:root {
+  --z-0: 0;                          /* base content */
+  --z-10: 10;                        /* raised content, canvas wrapper */
+  --z-20: 20;                        /* sticky headers, floating elements */
+  --z-30: 30;                        /* overlays (ModernUI ambient) */
+  --z-40: 40;                        /* slide-in panels, drawers */
+  --z-50: 50;                        /* modals, tooltips, dropdowns */
+  --z-60: 60;                        /* toasts, notifications */
+  --z-70: 70;                        /* loading screens, full-page overlays */
+  --z-max: 9999;                     /* debug, dev overlays, CRITICAL */
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   8. OPACITY SCALE
+   ═══════════════════════════════════════════════════════════════════════ */
+
+:root {
+  --opacity-none: 0;
+  --opacity-ghost: 0.1;
+  --opacity-subtle: 0.15;
+  --opacity-dim: 0.25;
+  --opacity-muted: 0.4;
+  --opacity-half: 0.5;
+  --opacity-strong: 0.7;
+  --opacity-mostly: 0.85;
+  --opacity-full: 1;
+
+  /* Semantic */
+  --opacity-disabled: 0.4;
+  --opacity-overlay: 0.6;
+  --opacity-backdrop: 0.8;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   9. CANVAS & GAME WORLD TOKENS
+   ═══════════════════════════════════════════════════════════════════════ */
+
+:root {
+  /* ── 9a. CANVAS COLORS ─────────────────────────────────────────── */
+  --canvas-bg: #0a0c10;              /* canvas background — slightly blue-black */
+  --canvas-grid: rgba(255, 255, 255, 0.02);  /* subtle grid lines */
+  --canvas-fog: rgba(0, 0, 0, 0.85);          /* fog of war */
+  --canvas-fog-explored: rgba(0, 0, 0, 0.4);   /* explored but not visible */
+
+  /* ── 9b. VIGNETTE ──────────────────────────────────────────────── */
+  --vignette-opacity-day: 0.3;
+  --vignette-opacity-night: 0.6;
+  --vignette-opacity-combat: 0.75;
+
+  /* ── 9c. DAY CYCLE TINTS ───────────────────────────────────────── */
+  --tint-day: rgba(255, 255, 255, 0);
+  --tint-dusk: rgba(255, 140, 50, 0.08);
+  --tint-night: rgba(10, 20, 60, 0.25);
+  --tint-dawn: rgba(180, 160, 220, 0.06);
+
+  /* ── 9d. PARTICLE COLORS ───────────────────────────────────────── */
+  --particle-firefly: #e2f587;
+  --particle-spark: #fbbf24;
+  --particle-smoke: rgba(100, 100, 110, 0.3);
+  --particle-blast: #fb923c;
+
+  /* ── 9e. DAMAGE FLASH ──────────────────────────────────────────── */
+  --damage-flash-color: rgba(251, 113, 133, 0.15);
+  --damage-flash-duration: 200ms;
+
+  /* ── 9f. PULSE RING ────────────────────────────────────────────── */
+  --pulse-ring-color: rgba(251, 191, 36, 0.3);
+  --pulse-ring-width: 3px;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+  10. COMPONENT PRESETS
+  ═══════════════════════════════════════════════════════════════════════ */
+
+:root {
+  /* ── 10a. SECTION CONTAINERS ───────────────────────────────────── */
+  /* Usage: `<section style="all: var(--section-default)">` (or classes) */
+  --section-bg: rgba(24, 24, 27, 0.4);
+  --section-border: var(--border-width-thin) solid rgba(39, 39, 42, 0.8);
+  --section-radius: var(--radius-md);
+  --section-padding: var(--space-3);
+  --section-gap: var(--space-5);
+
+  /* Semantic section variants */
+  --section-amber-bg: rgba(120, 53, 15, 0.15);
+  --section-amber-border: var(--border-width-thin) solid rgba(251, 191, 36, 0.3);
+  --section-emerald-bg: rgba(6, 78, 59, 0.15);
+  --section-emerald-border: var(--border-width-thin) solid rgba(52, 211, 153, 0.3);
+  --section-rose-bg: rgba(136, 19, 55, 0.3);
+  --section-rose-border: var(--border-width-thin) solid rgba(251, 113, 133, 0.4);
+  --section-sky-bg: rgba(12, 74, 110, 0.15);
+  --section-sky-border: var(--border-width-thin) solid rgba(56, 189, 248, 0.3);
+  --section-violet-bg: rgba(76, 29, 149, 0.15);
+  --section-violet-border: var(--border-width-thin) solid rgba(192, 132, 252, 0.3);
+
+  /* ── 10b. BUTTON PRESETS ───────────────────────────────────────── */
+  --btn-height: var(--height-button);
+  --btn-padding-x: var(--space-3);
+  --btn-padding-y: var(--space-2);
+  --btn-radius: var(--radius-md);
+  --btn-font-size: var(--text-md);
+  --btn-font-weight: var(--weight-semibold);
+  --btn-tracking: var(--tracking-wider);
+  --btn-text-transform: uppercase;
+  --btn-transition: var(--transition-all);
+
+  /* Primary (amber) */
+  --btn-primary-bg: rgba(120, 53, 15, 0.3);
+  --btn-primary-border: var(--border-width-thin) solid rgba(251, 191, 36, 0.4);
+  --btn-primary-text: #fde68a;
+  --btn-primary-hover-bg: rgba(120, 53, 15, 0.5);
+  --btn-primary-hover-border: rgba(251, 191, 36, 0.6);
+
+  /* Danger (rose) */
+  --btn-danger-bg: rgba(136, 19, 55, 0.4);
+  --btn-danger-border: var(--border-width-thin) solid rgba(251, 113, 133, 0.4);
+  --btn-danger-text: #fecdd3;
+  --btn-danger-hover-bg: rgba(136, 19, 55, 0.6);
+  --btn-danger-hover-border: rgba(251, 113, 133, 0.6);
+
+  /* Ghost (transparent) */
+  --btn-ghost-bg: transparent;
+  --btn-ghost-border: var(--border-width-thin) solid rgba(39, 39, 42, 0.6);
+  --btn-ghost-text: var(--color-text-body);
+  --btn-ghost-hover-bg: rgba(255, 255, 255, 0.05);
+  --btn-ghost-hover-border: rgba(39, 39, 42, 0.9);
+
+  /* ── 10c. PROGRESS BAR PRESETS ─────────────────────────────────── */
+  --progress-height: var(--height-progress);
+  --progress-track-bg: rgba(39, 39, 42, 0.8);
+  --progress-track-radius: var(--radius-full);
+  --progress-fill-bg: var(--color-primary);
+  --progress-fill-radius: var(--radius-full);
+  --progress-fill-transition: width var(--duration-slow) var(--ease-out);
+  --progress-fill-danger: var(--color-danger);
+  --progress-fill-success: var(--color-success);
+
+  /* ── 10d. INPUT / FORM PRESETS ─────────────────────────────────── */
+  --input-height: var(--height-input);
+  --input-bg: rgba(24, 24, 27, 0.5);
+  --input-border: var(--border-input);
+  --input-radius: var(--radius-md);
+  --input-text: var(--color-text-bright);
+  --input-placeholder: var(--color-text-faint);
+  --input-focus-border: rgba(251, 191, 36, 0.5);
+  --input-focus-shadow: 0 0 0 1px rgba(251, 191, 36, 0.2);
+
+  /* ── 10e. BADGE / PILL PRESETS ─────────────────────────────────── */
+  --badge-font-size: var(--text-sm);
+  --badge-padding-x: var(--space-2);
+  --badge-padding-y: 2px;
+  --badge-radius: var(--radius-full);
+  --badge-amber-bg: rgba(120, 53, 15, 0.5);
+  --badge-amber-text: var(--color-primary);
+  --badge-emerald-bg: rgba(6, 78, 59, 0.5);
+  --badge-emerald-text: var(--color-success);
+  --badge-rose-bg: rgba(136, 19, 55, 0.5);
+  --badge-rose-text: var(--color-danger);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+  11. ANIMATIONS — keyframes for common effects
+  ═══════════════════════════════════════════════════════════════════════ */
+
+/* ── 11a. PULSE — attention draw (wave counter, critical alert) ──── */
+@keyframes pulse-amber {
+  0%, 100% { box-shadow: 0 0 4px rgba(251, 191, 36, 0.3); }
+  50%      { box-shadow: 0 0 16px rgba(251, 191, 36, 0.6),
+                        0 0 32px rgba(251, 191, 36, 0.2); }
+}
+
+@keyframes pulse-rose {
+  0%, 100% { box-shadow: 0 0 4px rgba(251, 113, 133, 0.3); }
+  50%      { box-shadow: 0 0 16px rgba(251, 113, 133, 0.6),
+                        0 0 32px rgba(251, 113, 133, 0.2); }
+}
+
+@keyframes pulse-emerald {
+  0%, 100% { box-shadow: 0 0 4px rgba(52, 211, 153, 0.3); }
+  50%      { box-shadow: 0 0 16px rgba(52, 211, 153, 0.5); }
+}
+
+/* ── 11b. GLOW — steady ambient glow ─────────────────────────────── */
+@keyframes glow-amber {
+  from { box-shadow: var(--shadow-glow-amber); }
+  to   { box-shadow: 0 0 14px rgba(251, 191, 36, 0.5),
+                     0 0 28px rgba(251, 191, 36, 0.2); }
+}
+
+@keyframes glow-cyan {
+  from { box-shadow: var(--shadow-glow-cyan); }
+  to   { box-shadow: 0 0 14px rgba(6, 182, 212, 0.5),
+                     0 0 28px rgba(6, 182, 212, 0.2); }
+}
+
+/* ── 11c. FADE — enter/exit transitions ──────────────────────────── */
+@keyframes fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes fade-out {
+  from { opacity: 1; }
+  to   { opacity: 0; }
+}
+
+/* ── 11d. SLIDE — panel/drawer transitions ───────────────────────── */
+@keyframes slide-in-right {
+  from { transform: translateX(100%); opacity: 0; }
+  to   { transform: translateX(0); opacity: 1; }
+}
+
+@keyframes slide-out-right {
+  from { transform: translateX(0); opacity: 1; }
+  to   { transform: translateX(100%); opacity: 0; }
+}
+
+@keyframes slide-in-up {
+  from { transform: translateY(16px); opacity: 0; }
+  to   { transform: translateY(0); opacity: 1; }
+}
+
+@keyframes slide-out-down {
+  from { transform: translateY(0); opacity: 1; }
+  to   { transform: translateY(16px); opacity: 0; }
+}
+
+/* ── 11e. SHIMMER — loading skeleton, resource gain ──────────────── */
+@keyframes shimmer {
+  0%   { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+/* ── 11f. SCALE — pop-in for badges, notifications ───────────────── */
+@keyframes scale-in {
+  from { transform: scale(0.8); opacity: 0; }
+  to   { transform: scale(1); opacity: 1; }
+}
+
+/* ── 11g. BLINK — cursor, alert indicator ────────────────────────── */
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0; }
+}
+
+/* ── 11h. SCANLINE — CRT effect for Captain's Room ───────────────── */
+@keyframes scanline-scroll {
+  from { transform: translateY(0); }
+  to   { transform: translateY(4px); }
+}
+
+/* ── 11i. SHAKE — error feedback, critical damage ────────────────── */
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  10%, 90% { transform: translateX(-1px); }
+  20%, 80% { transform: translateX(2px); }
+  30%, 50%, 70% { transform: translateX(-2px); }
+  40%, 60% { transform: translateX(2px); }
+}
+
+/* ── 11j. DISSOLVE — wave banner, toast exit ─────────────────────── */
+@keyframes dissolve {
+  0%   { opacity: 1; transform: scale(1); filter: blur(0); }
+  100% { opacity: 0; transform: scale(0.95); filter: blur(2px); }
+}
+
+/* ── 11k. UTILITY CLASSES — animation attachments ────────────────── */
+.animate-pulse-amber  { animation: pulse-amber 2s ease-in-out infinite; }
+.animate-pulse-rose   { animation: pulse-rose 1.5s ease-in-out infinite; }
+.animate-pulse-emerald{ animation: pulse-emerald 3s ease-in-out infinite; }
+.animate-glow-amber   { animation: glow-amber 2s ease-in-out infinite alternate; }
+.animate-glow-cyan    { animation: glow-cyan 2s ease-in-out infinite alternate; }
+.animate-fade-in      { animation: fade-in var(--duration-normal) var(--ease-out) forwards; }
+.animate-fade-out     { animation: fade-out var(--duration-normal) var(--ease-out) forwards; }
+.animate-slide-in-right{ animation: slide-in-right var(--duration-slow) var(--ease-out) forwards; }
+.animate-slide-in-up  { animation: slide-in-up var(--duration-slow) var(--ease-out) forwards; }
+.animate-scale-in     { animation: scale-in var(--duration-normal) var(--ease-spring) forwards; }
+.animate-blink        { animation: blink 1s step-end infinite; }
+.animate-shake        { animation: shake 0.5s var(--ease-in-out); }
+.animate-dissolve     { animation: dissolve var(--duration-slower) var(--ease-out) forwards; }
+
+/* ═══════════════════════════════════════════════════════════════════════
+  12. BASE STYLES — full-viewport dark foundation
+  ═══════════════════════════════════════════════════════════════════════ */
+
+html, body, #root {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: var(--color-bg-deep);
+  color: var(--color-text-body);
+  font-family: var(--font-mono);
+  font-size: var(--text-base);
+  font-variant-numeric: tabular-nums;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ── 12a. SCROLLBAR — dark, minimal, zinc-toned ──────────────────── */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: var(--color-bg-deep);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-border-default);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-text-faint);
+}
+
+/* Firefox */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-border-default) var(--color-bg-deep);
+}
+
+/* ── 12b. SELECTION — amber-tinted, not bright blue ──────────────── */
+::selection {
+  background: rgba(251, 191, 36, 0.25);
+  color: var(--color-text-bright);
+}
+
+/* ── 12c. FOCUS VISIBLE — amber ring on keyboard focus ───────────── */
+:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-focus);
+  border-radius: var(--radius-sm);
+}
+
+/* ── 12d. REDUCED MOTION — respect user preference ───────────────── */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* ── 12e. CANVAS RESET — prevent default canvas margins ──────────── */
+canvas {
+  display: block;
+  image-rendering: pixelated;
+}
+
+/* ── 12f. LINK RESET — subtle, no underlines in game UI ──────────── */
+a {
+  color: var(--color-primary);
+  text-decoration: none;
+  transition: var(--transition-colors);
+}
+a:hover {
+  color: var(--color-primary-hover);
+}

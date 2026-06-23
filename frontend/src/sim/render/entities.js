@@ -1265,11 +1265,15 @@ export function drawTurrets(ctx, sim, scale) {
  * longer barrel, mortar-capable turrets show a wider barrel indicator.
  * Mounted turrets get a slight size bump and a wall-brace underline.
  *
+ * Barrel rotates toward _aimX/_aimY (set by tickTurrets) with a smooth
+ * slew — the barrel lags behind the actual aim direction by ~10 ticks
+ * for a mechanical servo feel.
+ *
  * Color: steel blue-gray (#4b8bb4 for watchers, #6ba4c7 for turrets).
  * Glow is subtle — turrets are infrastructure, not spectacle.
  *
  * @param {CanvasRenderingContext2D} ctx
- * @param {object} turret — { x, y, type, hasMortar, mounted, hp, maxHp, ... }
+ * @param {object} turret — { x, y, type, hasMortar, mounted, hp, maxHp, _aimX, _aimY, ... }
  * @param {number} scale — pixels per cell
  */
 function drawTurret(ctx, turret, scale) {
@@ -1282,10 +1286,16 @@ function drawTurret(ctx, turret, scale) {
   const r = (isAdvanced ? 0.65 : 0.5) * (turret.mounted ? 1.15 : 1.0) * scale;
 
   ctx.save();
+
+  // ── Shadow beneath turret (depth cue) ─────────────────────────
+  ctx.shadowColor = 'rgba(0, 0, 0, 0.4)';
+  ctx.shadowBlur = r * 0.25;
+  ctx.shadowOffsetX = -r * 0.08;
+  ctx.shadowOffsetY = r * 0.1;
+
+  // ── Hexagonal base ──────────────────────────────────────────
   ctx.shadowColor = glowColor;
   ctx.shadowBlur = r * 0.4;
-
-  // ── Hexagonal base ──────────────────────────────────────────────
   const sides = 6;
   ctx.beginPath();
   for (let i = 0; i < sides; i++) {
@@ -1303,8 +1313,14 @@ function drawTurret(ctx, turret, scale) {
   ctx.lineWidth = Math.max(1, r * 0.12);
   ctx.stroke();
 
-  // ── Inner platform (advanced turrets only) ──────────────────────
+  ctx.shadowBlur = 0;
+  ctx.shadowOffsetX = 0;
+  ctx.shadowOffsetY = 0;
+
+  // ── Inner platform (advanced turrets only) ──────────────────
   if (isAdvanced) {
+    ctx.shadowColor = glowColor;
+    ctx.shadowBlur = r * 0.15;
     ctx.beginPath();
     for (let i = 0; i < sides; i++) {
       const angle = -Math.PI / 6 + (Math.PI * 2 * i) / sides;
@@ -1319,19 +1335,57 @@ function drawTurret(ctx, turret, scale) {
     ctx.strokeStyle = hexToRgba(baseColor, 0.5);
     ctx.lineWidth = Math.max(0.5, r * 0.06);
     ctx.stroke();
+    ctx.shadowBlur = 0;
   }
 
-  // ── Barrel line ─────────────────────────────────────────────────
+  // ── Barrel — rotates toward aim target ───────────────────────
   const barrelLen = r * (turret.hasMortar ? 1.3 : isAdvanced ? 1.1 : 0.8);
   const barrelW = turret.hasMortar ? 2.5 : 1.5;
+
+  // Compute barrel angle: aim toward _aimX/_aimY if available,
+  // otherwise default to upward (-π/2). Slew toward target for
+  // mechanical feel: lerp current angle toward target angle.
+  let targetAngle = -Math.PI / 2; // default: up
+  if (turret._aimX != null && turret._aimY != null) {
+    targetAngle = Math.atan2(turret._aimY - turret.y, turret._aimX - turret.x);
+  }
+
+  // Smooth slew: init current angle if unset, then lerp toward target
+  if (turret._barrelAngle == null) turret._barrelAngle = targetAngle;
+  const slewRate = 0.35; // radians per tick — fast but mechanical
+  let diff = targetAngle - turret._barrelAngle;
+  // Wrap to [-π, π]
+  while (diff > Math.PI) diff -= Math.PI * 2;
+  while (diff < -Math.PI) diff += Math.PI * 2;
+  turret._barrelAngle += Math.sign(diff) * Math.min(Math.abs(diff), slewRate);
+
+  const barrelAngle = turret._barrelAngle;
+  const tipX = sx + Math.cos(barrelAngle) * barrelLen;
+  const tipY = sy + Math.sin(barrelAngle) * barrelLen;
+
+  // Barrel shadow (beneath)
+  ctx.strokeStyle = 'rgba(0, 0, 0, 0.25)';
+  ctx.lineWidth = Math.max(barrelW, barrelW * 0.8);
+  ctx.beginPath();
+  ctx.moveTo(sx + r * 0.04, sy + r * 0.04);
+  ctx.lineTo(tipX + r * 0.04, tipY + r * 0.04);
+  ctx.stroke();
+
+  // Barrel body
   ctx.strokeStyle = hexToRgba(baseColor, 0.9);
   ctx.lineWidth = Math.max(barrelW * 0.5, barrelW);
   ctx.beginPath();
   ctx.moveTo(sx, sy);
-  ctx.lineTo(sx, sy - barrelLen);
+  ctx.lineTo(tipX, tipY);
   ctx.stroke();
 
-  // ── Mounted wall brace underline ────────────────────────────────
+  // Barrel tip glow (muzzle end)
+  ctx.fillStyle = hexToRgba(glowColor, 0.35);
+  ctx.beginPath();
+  ctx.arc(tipX, tipY, barrelW * 0.6, 0, Math.PI * 2);
+  ctx.fill();
+
+  // ── Mounted wall brace underline ────────────────────────────
   if (turret.mounted) {
     ctx.strokeStyle = hexToRgba('#a3a3a3', 0.5);
     ctx.lineWidth = Math.max(1, r * 0.08);
@@ -1343,7 +1397,19 @@ function drawTurret(ctx, turret, scale) {
 
   ctx.restore();
 
-  // ── Health bar ──────────────────────────────────────────────────
+  // ── Firing indicator — ring at turret base when actively firing ──
+  if (turret.laserCd === turret.laserCdMax && turret.laserCdMax > 0) {
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.beginPath();
+    ctx.arc(sx, sy, r * 1.1, 0, Math.PI * 2);
+    ctx.strokeStyle = hexToRgba(glowColor, 0.3);
+    ctx.lineWidth = Math.max(1, r * 0.08);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // ── Health bar ──────────────────────────────────────────────
   drawHealthBar(ctx, sx, sy, turret.hp, turret.maxHp, 0.7, scale);
 }
 
@@ -1405,18 +1471,23 @@ export function drawBots(ctx, sim, scale) {
 /**
  * Draw a single worker bot.
  *
- * Renders as a small flat-top hexagon (echoes turret shape language at
- * reduced scale). State-driven colour changes are instant (no lerp) so
- * the player can read bot intent at a glance.
+ * Renders as a directional chassis — a rounded hexagonal body with
+ * a forward-facing indicator arrow showing movement direction.
+ * State-driven colour changes are instant (no lerp) so the player
+ * can read bot intent at a glance.
  *
  * Visual elements (back to front):
- *   1. Motion trail — 2 fading dots behind the bot when moving
- *   2. Hexagon chassis — filled + stroked, state-coloured
- *   3. Cargo dot — amber centre dot when carryingStone > 0
- *   4. Deposit flash — emerald ring pulse when at DEPOSIT_STONE
+ *   1. Motion trail — 3 fading dots behind the bot when moving
+ *   2. Base shadow — dark offset ellipse for depth
+ *   3. Hexagonal chassis — filled + stroked, state-coloured
+ *   4. Inner mechanical detail — cross-hatch for the drive core
+ *   5. Direction arrow — points toward movement target
+ *   6. State indicator — small dot at top showing current task
+ *   7. Cargo dot — amber centre dot when carryingStone > 0
+ *   8. Deposit flash — emerald ring pulse when at DEPOSIT_STONE
  *
  * @param {CanvasRenderingContext2D} ctx
- * @param {object} bot — { x, y, state, size, carryingStone, speed, ... }
+ * @param {object} bot — { x, y, state, size, carryingStone, speed, targetX, targetY, dx, dy, ... }
  * @param {number} scale — pixels per cell
  * @param {number} tick — current sim tick (for deposit pulse)
  */
@@ -1431,24 +1502,39 @@ function drawBot(ctx, bot, scale, tick) {
     || bot.state === 'HARVEST_STONE'
     || bot.state === 'RETURN_STONE';
 
+  // ── Compute movement direction for arrow and trails ──────────
+  let dirX = 0, dirY = -1; // default: up
+  // Prefer dx/dy from engine movement, fall back to target direction
+  if (bot.dx != null && bot.dy != null && (bot.dx !== 0 || bot.dy !== 0)) {
+    const len = Math.sqrt(bot.dx * bot.dx + bot.dy * bot.dy) || 1;
+    dirX = bot.dx / len;
+    dirY = bot.dy / len;
+  } else if (bot.targetX != null && bot.targetY != null) {
+    const tdx = bot.targetX - bot.x;
+    const tdy = bot.targetY - bot.y;
+    const tlen = Math.sqrt(tdx * tdx + tdy * tdy) || 1;
+    if (tlen > 0.05) {
+      dirX = tdx / tlen;
+      dirY = tdy / tlen;
+    }
+  }
+
   ctx.save();
 
-  // ── Motion trail (moving bots only) ─────────────────────────────
-  if (isMoving && bot.speed > 0) {
-    // Direction inferred from target or recent movement
-    const dirX = bot.targetX != null ? bot.targetX - bot.x : 0;
-    const dirY = bot.targetY != null ? bot.targetY - bot.y : 0;
-    const dirLen = Math.sqrt(dirX * dirX + dirY * dirY) || 1;
-    const ndx = dirX / dirLen;
-    const ndy = dirY / dirLen;
+  // ── Base shadow (depth cue) ───────────────────────────────────
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
+  ctx.beginPath();
+  ctx.ellipse(sx + r * 0.1, sy + r * 0.15, r * 0.65, r * 0.25, 0, 0, Math.PI * 2);
+  ctx.fill();
 
-    // Two trail dots behind the bot, fading with distance
-    for (let t = 1; t <= 2; t++) {
-      const trailAlpha = 0.3 - t * 0.12;       // 0.18, 0.06
+  // ── Motion trail (moving bots only) ───────────────────────────
+  if (isMoving && bot.speed > 0) {
+    for (let t = 1; t <= 3; t++) {
+      const trailAlpha = 0.25 - t * 0.07;    // 0.18, 0.11, 0.04
       if (trailAlpha <= 0.01) continue;
-      const tx = sx - ndx * r * t * 1.6;
-      const ty = sy - ndy * r * t * 1.6;
-      const tr = r * (0.45 - t * 0.12);
+      const tx = sx - dirX * r * t * 1.4;
+      const ty = sy - dirY * r * t * 1.4;
+      const tr = r * (0.4 - t * 0.1);
 
       ctx.fillStyle = hexToRgba(visual.glow, trailAlpha);
       ctx.beginPath();
@@ -1457,15 +1543,34 @@ function drawBot(ctx, bot, scale, tick) {
     }
   }
 
-  // ── Subtle outer glow ───────────────────────────────────────────
+  // ── Outer glow halo ───────────────────────────────────────────
   ctx.shadowColor = visual.glow;
-  ctx.shadowBlur = r * 0.35;
+  ctx.shadowBlur = r * 0.5;
 
-  // ── Hexagonal chassis ───────────────────────────────────────────
+  // ── Directional arrow (renders behind chassis) ────────────────
+  // A small filled triangle pointing in movement direction
+  if (isMoving) {
+    const arrowLen = r * 1.0;
+    const arrowBase = r * 0.3;
+    const perpX = -dirY;
+    const perpY = dirX;
+
+    ctx.fillStyle = hexToRgba(visual.glow, 0.3);
+    ctx.beginPath();
+    ctx.moveTo(sx + dirX * arrowLen, sy + dirY * arrowLen);           // tip
+    ctx.lineTo(sx - dirX * r * 0.15 + perpX * arrowBase,
+               sy - dirY * r * 0.15 + perpY * arrowBase);             // left base
+    ctx.lineTo(sx - dirX * r * 0.15 - perpX * arrowBase,
+               sy - dirY * r * 0.15 - perpY * arrowBase);             // right base
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  // ── Hexagonal chassis ─────────────────────────────────────────
   const sides = 6;
   ctx.beginPath();
   for (let i = 0; i < sides; i++) {
-    const angle = -Math.PI / 6 + (Math.PI * 2 * i) / sides;  // flat-top
+    const angle = -Math.PI / 6 + (Math.PI * 2 * i) / sides; // flat-top
     const px = sx + r * 0.8 * Math.cos(angle);
     const py = sy + r * 0.8 * Math.sin(angle);
     if (i === 0) ctx.moveTo(px, py);
@@ -1481,30 +1586,90 @@ function drawBot(ctx, bot, scale, tick) {
 
   ctx.shadowBlur = 0;
 
-  // ── Cargo dot (carrying stone) ──────────────────────────────────
+  // ── Inner mechanical detail — cross-hatch core ────────────────
+  const coreR = r * 0.25;
+  ctx.strokeStyle = hexToRgba(visual.glow, 0.3);
+  ctx.lineWidth = Math.max(0.4, r * 0.06);
+  // Horizontal and vertical lines through center
+  ctx.beginPath();
+  ctx.moveTo(sx - coreR, sy); ctx.lineTo(sx + coreR, sy);
+  ctx.moveTo(sx, sy - coreR); ctx.lineTo(sx, sy + coreR);
+  ctx.stroke();
+  // Center dot
+  ctx.fillStyle = hexToRgba(visual.glow, 0.4);
+  ctx.beginPath();
+  ctx.arc(sx, sy, r * 0.1, 0, Math.PI * 2);
+  ctx.fill();
+
+  // ── State indicator dot (top of chassis) ──────────────────────
+  const stateColors = {
+    IDLE: '#4ea0c9', MOVING: '#4ea0c9',
+    HARVEST_STONE: '#fbbf24', RETURN_STONE: '#38bdf8',
+    DEPOSIT_STONE: '#34d399',
+  };
+  const stateColor = stateColors[bot.state] || '#4ea0c9';
+  const statePulse = bot.state === 'HARVEST_STONE'
+    ? 0.6 + Math.sin(tick * 0.3) * 0.4  // amber pulse
+    : bot.state === 'DEPOSIT_STONE'
+    ? 0.6 + Math.sin(tick * 0.5) * 0.4  // emerald pulse
+    : 0.7;
+
+  ctx.fillStyle = hexToRgba(stateColor, statePulse);
+  ctx.shadowColor = stateColor;
+  ctx.shadowBlur = r * 0.2;
+  ctx.beginPath();
+  ctx.arc(sx, sy - r * 0.7, r * 0.12, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.shadowBlur = 0;
+
+  // ── Cargo dot (carrying stone) ────────────────────────────────
   if (bot.carryingStone > 0) {
-    const cargoR = r * 0.28;
+    const cargoR = r * 0.3;
     ctx.fillStyle = '#fbbf24';   // amber — matches stone resource
     ctx.shadowColor = '#fcd34d';
-    ctx.shadowBlur = cargoR * 2.5;
+    ctx.shadowBlur = cargoR * 3;
     ctx.beginPath();
     ctx.arc(sx, sy, cargoR, 0, Math.PI * 2);
+    ctx.fill();
+    // Bright core
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+    ctx.beginPath();
+    ctx.arc(sx, sy, cargoR * 0.4, 0, Math.PI * 2);
     ctx.fill();
     ctx.shadowBlur = 0;
   }
 
-  // ── Deposit flash (unloading at base) ───────────────────────────
+  // ── Deposit flash (unloading at base) ─────────────────────────
   if (bot.state === 'DEPOSIT_STONE') {
     const pulse = (Math.sin(tick * 0.4) + 1) / 2;   // ~4 Hz shimmer
     const ringAlpha = 0.3 + pulse * 0.4;              // 0.3–0.7
     ctx.strokeStyle = hexToRgba('#6ee7b7', ringAlpha);
     ctx.lineWidth = Math.max(1, r * 0.2);
     ctx.beginPath();
-    ctx.arc(sx, sy, r * 1.1, 0, Math.PI * 2);
+    ctx.arc(sx, sy, r * 1.2, 0, Math.PI * 2);
     ctx.stroke();
   }
 
   ctx.restore();
+
+  // ── Harvesting particle emanation ─────────────────────────────
+  if (bot.state === 'HARVEST_STONE') {
+    const particleCount = 3;
+    ctx.save();
+    for (let i = 0; i < particleCount; i++) {
+      const angle = (tick * 0.15 + i * Math.PI * 2 / particleCount) % (Math.PI * 2);
+      const dist = r * 1.1;
+      const px = sx + Math.cos(angle) * dist;
+      const py = sy + Math.sin(angle) * dist;
+      const alpha = 0.3 + Math.sin(tick * 0.2 + i) * 0.2;
+
+      ctx.fillStyle = hexToRgba('#fbbf24', alpha);
+      ctx.beginPath();
+      ctx.arc(px, py, r * 0.12, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════════════
