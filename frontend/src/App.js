@@ -17,10 +17,15 @@ import { BehemothGame } from './components/BehemothGame.jsx';
 export default function App() {
   const simRef = useRef(null);
   const rafRef = useRef(null);
+  const runningRef = useRef(false);
   const [frame, setFrame] = useState(0);
 
   // Create sim once on mount
   useEffect(() => {
+    // Guard against double-mount (StrictMode, hot-reload, etc.)
+    if (runningRef.current) return;
+    runningRef.current = true;
+
     const sim = createSim({ worldWidth: 50, worldHeight: 50 });
     simRef.current = sim;
     // Temporary debug: expose sim for integration testing
@@ -39,6 +44,7 @@ export default function App() {
 
     return () => {
       running = false;
+      runningRef.current = false;
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
     };
   }, []);
