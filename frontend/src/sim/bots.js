@@ -14,7 +14,7 @@
  *   - Deposit at base center (1.5 cell range).
  */
 
-import { BOT, RESOURCE } from './config.js';
+import { BOT, RESOURCE, WALL } from './config.js';
 import { addResources } from './resource.js';
 
 // ── Bot State Machine Extension ─────────────────────────────────────
@@ -230,4 +230,153 @@ export function hasHigherPriorityWork(sim, bot) {
   // Placeholder: Crystal harvest / scavenge would have higher priority
   // if implemented
   return false;
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// BOT LIFECYCLE — extracted from engine.js
+// ═══════════════════════════════════════════════════════════════════════
+
+/**
+ * Create a worker bot at the given position (or near base center if omitted).
+ */
+export function createBot(sim, x, y) {
+  const bx = x ?? sim.baseCenter.x + (Math.random() - 0.5) * 2;
+  const by = y ?? sim.baseCenter.y + (Math.random() - 0.5) * 2;
+  return {
+    id: sim._nextBotId++,
+    x: bx,
+    y: by,
+    speed: BOT.speed,
+    size: BOT.size,
+    state: 'IDLE',
+    harvestZoneId: null,
+    harvestProgress: 0,
+    harvestTarget: 0,
+    carryingStone: 0,
+    targetX: null,
+    targetY: null,
+    lastHarvestCapped: false,
+  };
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// BOT MOVEMENT AND HARVESTING
+// ═══════════════════════════════════════════════════════════════════════
+
+export function tickBots(sim) {
+  for (const bot of sim.bots) {
+    switch (bot.state) {
+      case 'IDLE':
+        assignStoneHarvest(sim, bot);
+        break;
+      case 'HARVEST_STONE': {
+        const zone = sim.stoneZones?.find((z) => z.id === bot.harvestZoneId);
+        if (zone) {
+          moveBotToward(bot, zone.x, zone.y);
+          tickStoneHarvest(sim, bot);
+        }
+        break;
+      }
+      case 'RETURN_STONE': {
+        moveBotToward(bot, sim.baseCenter.x, sim.baseCenter.y);
+        tickStoneReturn(sim, bot);
+        break;
+      }
+      case 'DEPOSIT_STONE':
+        tickStoneReturn(sim, bot);
+        break;
+      case 'REPAIR': {
+        const wall = sim.walls?.find((w) => w.id === bot.wallId && w.alive);
+        if (wall) {
+          moveBotToward(bot, wall.x, wall.y);
+          tickRepair(sim, bot, wall);
+        } else {
+          bot.state = 'IDLE';
+          bot.wallId = null;
+        }
+        break;
+      }
+      case 'BUILD': {
+        const wall = sim.walls?.find((w) => w.id === bot.wallId && w.alive && w.building);
+        if (wall) {
+          moveBotToward(bot, wall.x, wall.y);
+          tickBuild(sim, bot, wall);
+        } else {
+          bot.state = 'IDLE';
+          bot.wallId = null;
+        }
+        break;
+      }
+    }
+  }
+}
+
+export function moveBotToward(bot, tx, ty) {
+  if (tx == null || ty == null) return;
+  const dx = tx - bot.x;
+  const dy = ty - bot.y;
+  const dist = Math.sqrt(dx * dx + dy * dy);
+  if (dist < 0.1) return;
+  const step = Math.min(bot.speed, dist);
+  bot.x += (dx / dist) * step;
+  bot.y += (dy / dist) * step;
+}
+
+/**
+ * Process one tick of wall repair by a bot.
+ * Bot must be at the wall to repair.
+ *
+ * @param {object} sim
+ * @param {object} bot
+ * @param {object} wall
+ */
+export function tickRepair(sim, bot, wall) {
+  const dist = Math.sqrt((bot.x - wall.x) ** 2 + (bot.y - wall.y) ** 2);
+  if (dist > wall.radius + 0.5) return; // not close enough yet
+
+  // Repair the wall
+  const healAmount = WALL.repairRate;
+  wall.hp = Math.min(wall.maxHp, wall.hp + healAmount);
+
+  // If fully repaired, bot goes idle
+  if (wall.hp >= wall.maxHp) {
+    bot.state = 'IDLE';
+    bot.wallId = null;
+  }
+}
+
+/**
+ * Process one tick of wall construction by a bot.
+ * Bot must be at the wall to build.
+ *
+ * @param {object} sim
+ * @param {object} bot
+ * @param {object} wall
+ */
+export function tickBuild(sim, bot, wall) {
+  // Safety: if wall is missing buildTicks (state corruption), abort build
+  if (!Number.isFinite(wall.buildTicks) || wall.buildTicks <= 0) {
+    wall.building = false;
+    wall.builderId = null;
+    wall.buildProgress = 0;
+    bot.state = 'IDLE';
+    bot.wallId = null;
+    return;
+  }
+
+  const dist = Math.sqrt((bot.x - wall.x) ** 2 + (bot.y - wall.y) ** 2);
+  if (dist > wall.radius + 0.5) return; // not close enough yet
+
+  // Progress the build
+  wall.buildProgress = (wall.buildProgress || 0) + 1;
+
+  if (wall.buildProgress >= wall.buildTicks) {
+    // Build complete
+    wall.building = false;
+    wall.buildProgress = 0;
+    wall.builderId = null;
+    wall.hp = wall.maxHp;
+    bot.state = 'IDLE';
+    bot.wallId = null;
+  }
 }

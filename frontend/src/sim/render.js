@@ -23,6 +23,38 @@ import {
   drawWalls,
 } from './render/entities.js';
 
+// ═══════════════════════════════════════════════════════════════════════
+// RENDER STATE INITIALIZATION
+// ═══════════════════════════════════════════════════════════════════════
+
+/**
+ * Initialize render-scoped VFX state on the sim object.
+ *
+ * All canvas VFX maps/sets/arrays live on sim.renderState instead of
+ * at module scope. This prevents cross-instance state corruption on
+ * hot-reload — each sim gets its own fresh render state.
+ *
+ * Called from engine.js createSim() once at sim creation.
+ *
+ * @param {object} sim — sim state object (mutated in place)
+ */
+export function initRenderState(sim) {
+  sim.renderState = {
+    deathParticles: [],
+    deathEvents: [],
+    processedDeaths: new Set(),
+    bossShockwaves: new Map(),
+    crystalDrops: [],
+    prevEnemyHp: new Map(),
+    crawlerTrails: new Map(),
+    damageFlashes: new Map(),
+    baseParticles: [],
+    muzzleFlashes: [],
+    prevLaserCd: new Map(),
+    prevMortarCd: new Map(),
+  };
+}
+
 // Re-export for external consumers (index.js)
 export {
   drawBackground,
@@ -38,6 +70,7 @@ export {
   drawTurrets,
   drawBots,
   drawWalls,
+  initRenderState,
 };
 
 // ═══════════════════════════════════════════════════════════════════════

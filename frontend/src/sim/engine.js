@@ -14,10 +14,16 @@
  *   - Boss waves (every 5): single boss with high HP
  *   - Boss+swarm (every 15): boss + 40% crawler swarm
  *
+ * CONVENTION: No module-level mutable state.
+ * All mutable containers (Maps, Sets, arrays, objects) MUST live on the sim
+ * object (init'd in createSim) or sim.renderState (initRenderState). Module-
+ * scoped new Map(), new Set(), = [] that gets pushed to, etc. are FORBIDDEN —
+ * they cause cross-instance state corruption on hot-reload. See convention.test.js.
+ *
  * @module engine
  */
 
-import { RESOURCE, COST, ECON, ENEMY, WAVE, SWARM, SCALING, BASE, DAY_CYCLE, BOT, LEVEL, WALL } from './config.js';
+import { RESOURCE, COST, ECON, ENEMY, WAVE, SWARM, SCALING, BASE, DAY_CYCLE, BOT, LEVEL } from './config.js';
 import {
   addResources,
   buildResourceHUD,
@@ -36,9 +42,11 @@ import {
   getWallSummary,
 } from './walls.js';
 import { generateStoneZones } from './world.js';
-import { assignStoneHarvest, tickStoneHarvest, tickStoneReturn } from './bots.js';
+import { assignStoneHarvest, tickStoneHarvest, tickStoneReturn, createBot, tickBots, moveBotToward, tickRepair, tickBuild } from './bots.js';
 import { tickArtilleryEnemy, tickScoutAI, tickTankAura, checkCrawlerStack, tickBossAI, fireBossShockwave } from './enemies.js';
 import { tickLabour } from './labour.js';
+import { initRenderState } from './render.js';
+import { tickDayCycle } from './daycycle.js';
 
 // ═══════════════════════════════════════════════════════════════════════
 // RESOURCE STATE
@@ -253,9 +261,15 @@ export function createSim(options = {}) {
     _nextWallId: 1,
     _nextBotId: 1,
     _abilityCooldowns: {},
+
+    // Render VFX state — scoped to sim instance to prevent cross-instance
+    // corruption on hot-reload. All canvas VFX maps/sets/arrays live here
+    // instead of at module scope in render.js.
+    renderState: {},
   };
 
   initResourceState(sim);
+  initRenderState(sim);
   genWorld(sim);
   generateStoneZones(sim, Date.now(), Math.random);
 
@@ -301,29 +315,6 @@ function genWorld(sim) {
   }
 
   world.grid = grid;
-}
-
-/**
- * Create a worker bot at the given position (or near base center if omitted).
- */
-function createBot(sim, x, y) {
-  const bx = x ?? sim.baseCenter.x + (Math.random() - 0.5) * 2;
-  const by = y ?? sim.baseCenter.y + (Math.random() - 0.5) * 2;
-  return {
-    id: sim._nextBotId++,
-    x: bx,
-    y: by,
-    speed: BOT.speed,
-    size: BOT.size,
-    state: 'IDLE',
-    harvestZoneId: null,
-    harvestProgress: 0,
-    harvestTarget: 0,
-    carryingStone: 0,
-    targetX: null,
-    targetY: null,
-    lastHarvestCapped: false,
-  };
 }
 
 /** Tick the base: shield regen, level-up, radius scaling. */
@@ -625,8 +616,16 @@ function createEnemy(sim, type, spawnPoint, wave) {
   // Wave scaling factor: stat = base * (1 + SCALE * (wave - 1))
   const scaleFactor = wave - 1;
 
+  // Crawler HP scaling override: if SCALING.CRAWLER_HP_SCALE is defined
+  // (not undefined/null), use it instead of SCALING.HP_SCALE.
+  // Default: CRAWLER_HP_SCALE=0 freezes crawler HP at base value forever,
+  // keeping crawlers one-shot kills per swarm design spec.
+  const hpScale = (type === 'crawler' && SCALING.CRAWLER_HP_SCALE != null)
+    ? SCALING.CRAWLER_HP_SCALE
+    : SCALING.HP_SCALE;
+
   const scaledHp = Math.min(
-    config.hp * (1 + SCALING.HP_SCALE * scaleFactor),
+    config.hp * (1 + hpScale * scaleFactor),
     config.hp * SCALING.HP_CAP
   );
   const scaledSpeed = config.speed * (1 + SCALING.SPEED_SCALE * scaleFactor);
@@ -816,185 +815,6 @@ function tickEnemies(sim) {
   }
 
   sim.enemies = sim.enemies.filter((e) => e.alive);
-}
-
-// ═══════════════════════════════════════════════════════════════════════
-// BOT MOVEMENT AND HARVESTING
-// ═══════════════════════════════════════════════════════════════════════
-
-function tickBots(sim) {
-  for (const bot of sim.bots) {
-    switch (bot.state) {
-      case 'IDLE':
-        assignStoneHarvest(sim, bot);
-        break;
-      case 'HARVEST_STONE': {
-        const zone = sim.stoneZones?.find((z) => z.id === bot.harvestZoneId);
-        if (zone) {
-          moveBotToward(bot, zone.x, zone.y);
-          tickStoneHarvest(sim, bot);
-        }
-        break;
-      }
-      case 'RETURN_STONE': {
-        moveBotToward(bot, sim.baseCenter.x, sim.baseCenter.y);
-        tickStoneReturn(sim, bot);
-        break;
-      }
-      case 'DEPOSIT_STONE':
-        tickStoneReturn(sim, bot);
-        break;
-      case 'REPAIR': {
-        const wall = sim.walls?.find((w) => w.id === bot.wallId && w.alive);
-        if (wall) {
-          moveBotToward(bot, wall.x, wall.y);
-          tickRepair(sim, bot, wall);
-        } else {
-          bot.state = 'IDLE';
-          bot.wallId = null;
-        }
-        break;
-      }
-      case 'BUILD': {
-        const wall = sim.walls?.find((w) => w.id === bot.wallId && w.alive && w.building);
-        if (wall) {
-          moveBotToward(bot, wall.x, wall.y);
-          tickBuild(sim, bot, wall);
-        } else {
-          bot.state = 'IDLE';
-          bot.wallId = null;
-        }
-        break;
-      }
-    }
-  }
-}
-
-function moveBotToward(bot, tx, ty) {
-  if (tx == null || ty == null) return;
-  const dx = tx - bot.x;
-  const dy = ty - bot.y;
-  const dist = Math.sqrt(dx * dx + dy * dy);
-  if (dist < 0.1) return;
-  const step = Math.min(bot.speed, dist);
-  bot.x += (dx / dist) * step;
-  bot.y += (dy / dist) * step;
-}
-
-/**
- * Process one tick of wall repair by a bot.
- * Bot must be at the wall to repair.
- *
- * @param {object} sim
- * @param {object} bot
- * @param {object} wall
- */
-function tickRepair(sim, bot, wall) {
-  const dist = Math.sqrt((bot.x - wall.x) ** 2 + (bot.y - wall.y) ** 2);
-  if (dist > wall.radius + 0.5) return; // not close enough yet
-
-  // Repair the wall
-  const healAmount = WALL.repairRate;
-  wall.hp = Math.min(wall.maxHp, wall.hp + healAmount);
-
-  // If fully repaired, bot goes idle
-  if (wall.hp >= wall.maxHp) {
-    bot.state = 'IDLE';
-    bot.wallId = null;
-  }
-}
-
-/**
- * Process one tick of wall construction by a bot.
- * Bot must be at the wall to build.
- *
- * @param {object} sim
- * @param {object} bot
- * @param {object} wall
- */
-function tickBuild(sim, bot, wall) {
-  // Safety: if wall is missing buildTicks (state corruption), abort build
-  if (!Number.isFinite(wall.buildTicks) || wall.buildTicks <= 0) {
-    wall.building = false;
-    wall.builderId = null;
-    wall.buildProgress = 0;
-    bot.state = 'IDLE';
-    bot.wallId = null;
-    return;
-  }
-
-  const dist = Math.sqrt((bot.x - wall.x) ** 2 + (bot.y - wall.y) ** 2);
-  if (dist > wall.radius + 0.5) return; // not close enough yet
-
-  // Progress the build
-  wall.buildProgress = (wall.buildProgress || 0) + 1;
-
-  if (wall.buildProgress >= wall.buildTicks) {
-    // Build complete
-    wall.building = false;
-    wall.buildProgress = 0;
-    wall.builderId = null;
-    wall.hp = wall.maxHp;
-    bot.state = 'IDLE';
-    bot.wallId = null;
-  }
-}
-
-// ═══════════════════════════════════════════════════════════════════════
-// DAY / NIGHT CYCLE
-// ═══════════════════════════════════════════════════════════════════════
-
-/**
- * Advance the day/night phase cycle.
- *
- * Phases rotate through DAY_CYCLE.phaseOrder. Each phase lasts for
- * its configured duration (in ticks). Transitions include a smooth
- * blend period (transitionTicks) that the renderer uses for visual
- * interpolation.
- *
- * Called once per tick at the top of stepTick(), before wave logic
- * (wave spawning is gated on night phase via WAVE.nightOnly).
- *
- * @param {object} sim — sim state
- */
-function tickDayCycle(sim) {
-  const { phaseOrder, phaseDurations, transitionTicks } = DAY_CYCLE;
-
-  sim.dayTimer++;
-
-  const currentIdx = phaseOrder.indexOf(sim.dayPhase);
-  if (currentIdx === -1) {
-    // Safety: reset to starting phase
-    sim.dayPhase = phaseOrder[0];
-    sim.dayTimer = 0;
-    return;
-  }
-
-  const currentDuration = phaseDurations[sim.dayPhase];
-  if (currentDuration == null) return;
-
-  // Check for phase transition
-  if (sim.dayTimer >= currentDuration) {
-    const nextIdx = (currentIdx + 1) % phaseOrder.length;
-    sim.dayPhase = phaseOrder[nextIdx];
-    sim.dayTimer = 0;
-
-    sim.debugLog.push({
-      msg: `DAY CYCLE → ${sim.dayPhase}`,
-      tick: sim.tick,
-    });
-    if (sim.debugLog.length > 50) {
-      sim.debugLog = sim.debugLog.slice(-50);
-    }
-  }
-
-  // Compute transition progress for renderer (0 = start of phase, 1 = at transition point)
-  sim.dayTransition =
-    sim.dayTimer < transitionTicks
-      ? sim.dayTimer / transitionTicks
-      : currentDuration - sim.dayTimer < transitionTicks
-        ? (currentDuration - sim.dayTimer) / transitionTicks
-        : 1.0;
 }
 
 // ═══════════════════════════════════════════════════════════════════════
